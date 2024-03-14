@@ -74,7 +74,8 @@ class TestSingleLink(unittest.TestCase):
         )
         save_arr = np.load(TEST_DATA_PATH + "position_exp.npy")
         self.assertAlmostEqual(
-            jnp.sum(jnp.abs(position_exp - save_arr)), 0.0, places=5
+            jnp.sum(jnp.abs(position_exp - save_arr)) / np.max(save_arr),
+            0.0,
         )
 
     def test_geometrical_factor(self):
