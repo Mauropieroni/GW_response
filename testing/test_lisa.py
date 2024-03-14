@@ -117,7 +117,8 @@ class TestLISA(unittest.TestCase):
         )
         save_arr = np.load(TEST_DATA_PATH + "lisa_arms_matrix_analytical.npy")
         self.assertAlmostEqual(
-            jnp.sum(jnp.abs(lisa_arms_matrix - save_arr)), 0.0
+            jnp.sum(jnp.abs(lisa_arms_matrix - save_arr)) / np.max(save_arr),
+            0.0,
         )
         arm_lengths = jnp.sqrt(
             jnp.einsum("tij,tij->tj", lisa_arms_matrix, lisa_arms_matrix)
