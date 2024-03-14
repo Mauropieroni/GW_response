@@ -68,14 +68,14 @@ class TestSingleLink(unittest.TestCase):
         )
         sp1, sp2, sp3 = gwr.shift_to_center(p1, p2, p3)
         position_exp = gwr.position_exponential(
-            positions_detector_frame=jnp.array([[sp1, sp2, sp3]]),
+            positions_detector_frame=jnp.array([[sp1, sp2, sp3]])
+            / lisa.armlength,
             unit_wavevector=unit_vector,
             x_vector=lisa.x(freqs),
         )
         save_arr = np.load(TEST_DATA_PATH + "position_exp.npy")
         self.assertAlmostEqual(
-            jnp.sum(jnp.abs(position_exp - save_arr))
-            / np.max(np.abs(save_arr)),
+            jnp.sum(jnp.abs(position_exp - save_arr)),
             0.0,
         )
 
