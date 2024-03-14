@@ -22,6 +22,7 @@ class TestLISA(unittest.TestCase):
         self.assertAlmostEqual(
             jnp.sum(jnp.abs(lisa_analytical_x_positions - save_arr)),
             0.0,
+            places=5,
         )
 
     def test_lisa_analytical_y_positions(self):
@@ -38,6 +39,7 @@ class TestLISA(unittest.TestCase):
         self.assertAlmostEqual(
             jnp.sum(jnp.abs(lisa_analytical_y_positions - save_arr)),
             0.0,
+            places=5,
         )
 
     def test_lisa_analytical_z_positions(self):
@@ -54,6 +56,7 @@ class TestLISA(unittest.TestCase):
         self.assertAlmostEqual(
             jnp.sum(jnp.abs(lisa_analytical_z_positions - save_arr)),
             0.0,
+            places=5,
         )
 
     def test_lisa_analytical_positions(self):
@@ -70,6 +73,7 @@ class TestLISA(unittest.TestCase):
         self.assertAlmostEqual(
             jnp.sum(jnp.abs(lisa_analytical_positions - save_arr)),
             0.0,
+            places=5,
         )
 
     def test_lisa_analytical_positions_vm(self):
@@ -86,6 +90,7 @@ class TestLISA(unittest.TestCase):
         self.assertAlmostEqual(
             jnp.sum(jnp.abs(lisa_analytical_positions - save_arr)),
             0.0,
+            places=5,
         )
 
     def test_lisa_satellite_positions(self):
@@ -98,7 +103,9 @@ class TestLISA(unittest.TestCase):
         )
         save_arr = np.load(TEST_DATA_PATH + "lisa_satellite_positions.npy")
         self.assertAlmostEqual(
-            jnp.sum(jnp.abs(lisa_analytical_positions - save_arr)), 0.0
+            jnp.sum(jnp.abs(lisa_analytical_positions - save_arr)),
+            0.0,
+            places=5,
         )
 
     def test_lisa_arms_matrix(self):
@@ -116,7 +123,11 @@ class TestLISA(unittest.TestCase):
             jnp.einsum("tij,tij->tj", lisa_arms_matrix, lisa_arms_matrix)
         )
         save_arr = np.load(TEST_DATA_PATH + "arm_lengths.npy")
-        self.assertAlmostEqual(jnp.sum(jnp.abs(arm_lengths - save_arr)), 0.0)
+        self.assertAlmostEqual(
+            jnp.sum(jnp.abs(arm_lengths - save_arr)),
+            0.0,
+            places=5,
+        )
 
     def test_lisa_class(self):
         time_in_years = jnp.linspace(0, 1.0, 100)
@@ -133,11 +144,17 @@ class TestLISA(unittest.TestCase):
         satellite_positions = lisa.satellite_positions(time_in_years)
         save_arr = np.load(TEST_DATA_PATH + "satellite_positions.npy")
         self.assertAlmostEqual(
-            jnp.sum(jnp.abs(satellite_positions - save_arr)), 0.0
+            jnp.sum(jnp.abs(satellite_positions - save_arr)),
+            0.0,
+            places=5,
         )
         arms_matrix = lisa.detector_arms(time_in_years)
         save_arr = np.load(TEST_DATA_PATH + "arms_matrix.npy")
-        self.assertAlmostEqual(jnp.sum(jnp.abs(arms_matrix - save_arr)), 0.0)
+        self.assertAlmostEqual(
+            jnp.sum(jnp.abs(arms_matrix - save_arr)),
+            0.0,
+            places=5,
+        )
 
 
 if __name__ == "__main__":

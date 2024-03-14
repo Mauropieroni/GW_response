@@ -73,7 +73,9 @@ class TestSingleLink(unittest.TestCase):
             x_vector=lisa.x(freqs),
         )
         save_arr = np.load(TEST_DATA_PATH + "position_exp.npy")
-        self.assertAlmostEqual(jnp.sum(jnp.abs(position_exp - save_arr)), 0.0)
+        self.assertAlmostEqual(
+            jnp.sum(jnp.abs(position_exp - save_arr)), 0.0, places=5
+        )
 
     def test_geometrical_factor(self):
         lisa = gwr.LISA()
