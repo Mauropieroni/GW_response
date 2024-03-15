@@ -1,7 +1,7 @@
-# `gw_reponse`
+# `gw_response`
 A python code to compute the response function of a GW interferometer.
 
-**Release:** v0.01 Coming soon.
+**Release:** v0.01 available now. Tested on python 3.9, 3.10, and 3.11.
 
 **Current status:** Under active development
 
