@@ -21,7 +21,7 @@ class TestNoise(unittest.TestCase):
         freqs = jnp.logspace(-5, 0, 300)
         time_in_years = jnp.linspace(0, 1.0, 100)
         lisa = gwr.LISA()
-        TM_params = jnp.array(np.ones(6))
+        TM_params = jnp.ones(shape=(100, 6))
         tm_noise_single_link = gwr.single_link_TM_acceleration_noise_variance(
             freqs,
             TM_acceleration_parameters=TM_params,  # Should be length 6 (for each of the arms)
@@ -76,9 +76,7 @@ class TestNoise(unittest.TestCase):
         freqs = jnp.logspace(-5, 0, 300)
         time_in_years = jnp.linspace(0, 1.0, 100)
         lisa = gwr.LISA()
-        OMS_params = jnp.array(
-            np.ones(6)
-        )  # Should be shape [time, 6] (for each of the arms)
+        OMS_params = jnp.ones(shape=(100, 6))
         oms_noise_single_link = gwr.single_link_OMS_noise_variance(
             freqs,
             OMS_parameters=OMS_params,  # Should be length 6 (for each of the arms)
@@ -133,8 +131,8 @@ class TestNoise(unittest.TestCase):
         freqs = jnp.logspace(-5, 0, 300)
         time_in_years = jnp.linspace(0, 1.0, 100)
         lisa = gwr.LISA()
-        TM_params = jnp.array(np.ones(6))
-        OMS_params = jnp.array(np.ones(6))
+        TM_params = jnp.ones(shape=(100, 6))
+        OMS_params = jnp.ones(shape=(100, 6))
         noise_matrix = gwr.noise_matrix(
             TDI_idx=0,
             frequency=freqs,
