@@ -175,7 +175,7 @@ def tdi_projection(
 
 
 @jax.jit
-def noise_TM_matrix(
+def _noise_TM_matrix(
     TDI_idx,
     frequency,
     TM_acceleration_parameters,
@@ -193,8 +193,39 @@ def noise_TM_matrix(
     )
 
 
+def noise_TM_matrix(
+    TDI_idx,
+    frequency,
+    TM_acceleration_parameters,
+    arms_matrix_rescaled,
+    x_vector,
+):
+    """TO ADD."""
+
+    if (
+        len(TM_acceleration_parameters.shape)
+        != len(arms_matrix_rescaled.shape) - 1
+    ) or (
+        TM_acceleration_parameters.shape[-1] != arms_matrix_rescaled.shape[-1]
+    ):
+        raise ValueError(
+            "TM_acceleration_parameters and arms_matrix_rescaled"
+            + " do not have compatible shapes",
+            TM_acceleration_parameters.shape,
+            arms_matrix_rescaled.shape,
+        )
+
+    return _noise_TM_matrix(
+        TDI_idx,
+        frequency,
+        TM_acceleration_parameters,
+        arms_matrix_rescaled,
+        x_vector,
+    )
+
+
 @jax.jit
-def noise_OMS_matrix(
+def _noise_OMS_matrix(
     TDI_idx,
     frequency,
     OMS_parameters,
@@ -212,8 +243,31 @@ def noise_OMS_matrix(
     )
 
 
-@jax.jit
-def _noise_matrix(
+def noise_OMS_matrix(
+    TDI_idx,
+    frequency,
+    OMS_parameters,
+    arms_matrix_rescaled,
+    x_vector,
+):
+    """TO ADD."""
+
+    if (len(OMS_parameters.shape) != len(arms_matrix_rescaled.shape) - 1) or (
+        OMS_parameters.shape[-1] != arms_matrix_rescaled.shape[-1]
+    ):
+        raise ValueError(
+            "OMS_parameters and arms_matrix_rescaled"
+            + " do not have compatible shapes",
+            OMS_parameters.shape,
+            arms_matrix_rescaled.shape,
+        )
+
+    return _noise_OMS_matrix(
+        TDI_idx, frequency, OMS_parameters, arms_matrix_rescaled, x_vector
+    )
+
+
+def noise_matrix(
     TDI_idx,
     frequency,
     TM_acceleration_parameters,
@@ -230,47 +284,4 @@ def _noise_matrix(
         x_vector,
     ) + noise_OMS_matrix(
         TDI_idx, frequency, OMS_parameters, arms_matrix_rescaled, x_vector
-    )
-
-
-def noise_matrix(
-    TDI_idx,
-    frequency,
-    TM_acceleration_parameters,
-    OMS_parameters,
-    arms_matrix_rescaled,
-    x_vector,
-):
-
-    if (
-        len(TM_acceleration_parameters.shape)
-        != len(arms_matrix_rescaled.shape) - 1
-    ) or (
-        TM_acceleration_parameters.shape[-1] != arms_matrix_rescaled.shape[-1]
-    ):
-        raise ValueError(
-            "TM_acceleration_parameters and arms_matrix_rescaled"
-            + " do not have compatible shapes",
-            TM_acceleration_parameters.shape,
-            arms_matrix_rescaled.shape,
-        )
-
-    if (len(OMS_parameters.shape) != len(arms_matrix_rescaled.shape) - 1) or (
-        OMS_parameters.shape[-1] != arms_matrix_rescaled.shape[-1]
-    ):
-        raise ValueError(
-            "OMS_parameters and arms_matrix_rescaled"
-            + " do not have compatible shapes",
-            OMS_parameters.shape,
-            arms_matrix_rescaled.shape,
-        )
-
-    """TO ADD."""
-    return _noise_matrix(
-        TDI_idx,
-        frequency,
-        TM_acceleration_parameters,
-        OMS_parameters,
-        arms_matrix_rescaled,
-        x_vector,
     )
