@@ -5,17 +5,11 @@ import jax
 
 jax.config.update("jax_enable_x64", True)
 # jax.checking_leaks = True
-
-import jax.numpy as jnpd
-from functools import partial
-import healpy as hp
+import jax.numpy as jnp
 
 from .constants import PhysicalConstants
 from .tdi import tdi_matrix
 from .utils import arm_length_exponential
-
-import jax.numpy as jnp
-import jax
 
 
 @jax.jit
@@ -39,7 +33,7 @@ def LISA_acceleration_noise(frequency, acc_param=3.0):
     third = (2 * jnp.pi * frequency) ** (-4) * (
         2 * jnp.pi * frequency / 3e8
     ) ** 2
-    # TODO: Change 3e8 to ps.c
+    # TODO: Change 3e8 to ps.light_speed
     return acc_param**2 * 1e-30 * first * second * third
 
 
@@ -141,15 +135,16 @@ def single_link_OMS_noise_variance(
 ):
     """TO ADD."""
 
+    ### The shape will be configurations, arms, arms
     parameters_matrix = jnp.einsum(
         "ij,...j->...ij", jnp.identity(6), OMS_parameters**2
     )
 
+    ### The shape will be frequency
     N_int = LISA_interferometric_noise(frequency, inter_param=1.0)
 
-    noise_matrix = jnp.einsum("...ij,k->...kij", parameters_matrix, N_int)
-
-    return noise_matrix
+    ### The shape will be configurations, frequency, arms, arms
+    return jnp.einsum("...ij,k->...kij", parameters_matrix, N_int)
 
 
 @jax.jit
@@ -218,7 +213,7 @@ def noise_OMS_matrix(
 
 
 @jax.jit
-def noise_matrix(
+def _noise_matrix(
     TDI_idx,
     frequency,
     TM_acceleration_parameters,
@@ -235,4 +230,47 @@ def noise_matrix(
         x_vector,
     ) + noise_OMS_matrix(
         TDI_idx, frequency, OMS_parameters, arms_matrix_rescaled, x_vector
+    )
+
+
+def noise_matrix(
+    TDI_idx,
+    frequency,
+    TM_acceleration_parameters,
+    OMS_parameters,
+    arms_matrix_rescaled,
+    x_vector,
+):
+
+    if (
+        len(TM_acceleration_parameters.shape)
+        != len(arms_matrix_rescaled.shape) - 1
+    ) or (
+        TM_acceleration_parameters.shape[-1] != arms_matrix_rescaled.shape[-1]
+    ):
+        raise ValueError(
+            "TM_acceleration_parameters and arms_matrix_rescaled"
+            + " do not have compatible shapes",
+            TM_acceleration_parameters.shape,
+            arms_matrix_rescaled.shape,
+        )
+
+    if (len(OMS_parameters.shape) != len(arms_matrix_rescaled.shape) - 1) or (
+        OMS_parameters.shape[-1] != arms_matrix_rescaled.shape[-1]
+    ):
+        raise ValueError(
+            "OMS_parameters and arms_matrix_rescaled"
+            + " do not have compatible shapes",
+            OMS_parameters.shape,
+            arms_matrix_rescaled.shape,
+        )
+
+    """TO ADD."""
+    return _noise_matrix(
+        TDI_idx,
+        frequency,
+        TM_acceleration_parameters,
+        OMS_parameters,
+        arms_matrix_rescaled,
+        x_vector,
     )
