@@ -32,6 +32,8 @@ jobs:
         v=$(python -V | cut -d' ' -f2)
         if [ ${v%.*}='3.8' ]; 
                 then requirements_path+="3.8.txt"; 
+        elif [ ${v%.*}='3.11' ]; 
+                then requirements_path+="3.11.txt"; 
         else
                 requirements_path+=".txt"
         fi
