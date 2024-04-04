@@ -30,9 +30,9 @@ jobs:
         python -m pip install flake8 pytest
         requirements_path='requirements/requirements'
         v=$(python -V | cut -d' ' -f2)
-        if [ ${v%.*}='3.8' ]; 
+        if [ ${v%.*} == '3.8' ]; 
                 then requirements_path+="3.8.txt"; 
-        elif [ ${v%.*}='3.11' ]; 
+        elif [ ${v%.*} == '3.11' ]; 
                 then requirements_path+="3.11.txt"; 
         else
                 requirements_path+=".txt"
