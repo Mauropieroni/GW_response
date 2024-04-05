@@ -1,11 +1,14 @@
 from setuptools import setup, find_packages
 
+with open("requirements.txt") as f:
+    required_packages = f.read().splitlines()
+
 setup(
     name="gw_response",
     version="1.0.0",
-    description="A package for handling LISA GW response",
+    description="A jit-enhanced python code to compute the response function of some GW interferometer",
     author="Mauro Pieroni, James Alvey",
     author_email="mauro.pieroni@cern.ch, j.b.g.alvey@uva.nl",
     packages=find_packages(),
-    install_requires=["numpy", "jax", "jaxlib", "healpy", "chex"],
+    install_requires=required_packages,
 )
