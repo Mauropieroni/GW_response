@@ -51,7 +51,20 @@ class TestTDI(unittest.TestCase):
         )
         save_arr = np.load(TEST_DATA_PATH + "tdi_AET_Sagnac.npy")
         self.assertAlmostEqual(jnp.sum(jnp.abs(tdi_AET_Sagnac - save_arr)), 0.0)
-
+        tdi_AE_zeta = gwr.tdi_AE_zeta_matrix(
+            arms_matrix_rescaled=lisa.detector_arms(0.0) / lisa.armlength,
+            x_vector=lisa.x(freqs),
+        )
+        save_arr = np.load(TEST_DATA_PATH + "tdi_AE_zeta.npy")
+        self.assertAlmostEqual(jnp.sum(jnp.abs(tdi_AE_zeta - save_arr)), 0.0)
+        tdi_AE_Sagnac_zeta = gwr.tdi_AE_Sagnac_zeta_matrix(
+            arms_matrix_rescaled=lisa.detector_arms(0.0) / lisa.armlength,
+            x_vector=lisa.x(freqs),
+        )
+        save_arr = np.load(TEST_DATA_PATH + "tdi_AE_Sagnac_zeta.npy")
+        self.assertAlmostEqual(
+            jnp.sum(jnp.abs(tdi_AE_Sagnac_zeta - save_arr)), 0.0
+        )
         tdi_matrix = gwr.tdi_matrix(
             TDI_idx=0,  # XYZ basis
             arms_matrix_rescaled=lisa.detector_arms(0.0) / lisa.armlength,
@@ -59,13 +72,33 @@ class TestTDI(unittest.TestCase):
         )
         save_arr = np.load(TEST_DATA_PATH + "tdi_matrix_XYZ.npy")
         self.assertAlmostEqual(jnp.sum(jnp.abs(tdi_matrix - save_arr)), 0.0)
-
+        tdi_matrix = gwr.tdi_matrix(
+            TDI_idx=gwr.TDI_map["AET"],  # AET basis
+            arms_matrix_rescaled=lisa.detector_arms(0.0) / lisa.armlength,
+            x_vector=lisa.x(freqs),
+        )
+        save_arr = np.load(TEST_DATA_PATH + "tdi_matrix_AET.npy")
+        self.assertAlmostEqual(jnp.sum(jnp.abs(tdi_matrix - save_arr)), 0.0)
         tdi_matrix = gwr.tdi_matrix(
             TDI_idx=gwr.TDI_map["AET_Sagnac"],  # AET Sagnac basis
             arms_matrix_rescaled=lisa.detector_arms(0.0) / lisa.armlength,
             x_vector=lisa.x(freqs),
         )
         save_arr = np.load(TEST_DATA_PATH + "tdi_matrix_AET_Sagnac.npy")
+        self.assertAlmostEqual(jnp.sum(jnp.abs(tdi_matrix - save_arr)), 0.0)
+        tdi_matrix = gwr.tdi_matrix(
+            TDI_idx=gwr.TDI_map["AE_zeta"],  # AE_zeta basis
+            arms_matrix_rescaled=lisa.detector_arms(0.0) / lisa.armlength,
+            x_vector=lisa.x(freqs),
+        )
+        save_arr = np.load(TEST_DATA_PATH + "tdi_matrix_AE_zeta.npy")
+        self.assertAlmostEqual(jnp.sum(jnp.abs(tdi_matrix - save_arr)), 0.0)
+        tdi_matrix = gwr.tdi_matrix(
+            TDI_idx=gwr.TDI_map["AE_Sagnac_zeta"],  # AE_Sagnac_zeta basis
+            arms_matrix_rescaled=lisa.detector_arms(0.0) / lisa.armlength,
+            x_vector=lisa.x(freqs),
+        )
+        save_arr = np.load(TEST_DATA_PATH + "tdi_matrix_AE_Sagnac_zeta.npy")
         self.assertAlmostEqual(jnp.sum(jnp.abs(tdi_matrix - save_arr)), 0.0)
 
     def test_TDI_projection(self):
@@ -101,6 +134,30 @@ class TestTDI(unittest.TestCase):
             x_vector=lisa.x(freqs),
         )
         save_arr = np.load(TEST_DATA_PATH + "tdi_projection_XYZ.npy")
+        self.assertAlmostEqual(jnp.sum(jnp.abs(tdi_projection - save_arr)), 0.0)
+        tdi_projection = gwr.build_tdi(
+            TDI_idx=gwr.TDI_map["AET"],  # AET basis
+            single_link=single_link_response,
+            arms_matrix_rescaled=lisa.detector_arms(0.0) / lisa.armlength,
+            x_vector=lisa.x(freqs),
+        )
+        save_arr = np.load(TEST_DATA_PATH + "tdi_projection_AET.npy")
+        self.assertAlmostEqual(jnp.sum(jnp.abs(tdi_projection - save_arr)), 0.0)
+        tdi_projection = gwr.build_tdi(
+            TDI_idx=gwr.TDI_map["AE_zeta"],  # AEZ basis
+            single_link=single_link_response,
+            arms_matrix_rescaled=lisa.detector_arms(0.0) / lisa.armlength,
+            x_vector=lisa.x(freqs),
+        )
+        save_arr = np.load(TEST_DATA_PATH + "tdi_projection_AE_zeta.npy")
+        self.assertAlmostEqual(jnp.sum(jnp.abs(tdi_projection - save_arr)), 0.0)
+        tdi_projection = gwr.build_tdi(
+            TDI_idx=gwr.TDI_map["AE_Sagnac_zeta"],  # AE_Sagnac_Z basis
+            single_link=single_link_response,
+            arms_matrix_rescaled=lisa.detector_arms(0.0) / lisa.armlength,
+            x_vector=lisa.x(freqs),
+        )
+        save_arr = np.load(TEST_DATA_PATH + "tdi_projection_AE_Sagnac_zeta.npy")
         self.assertAlmostEqual(jnp.sum(jnp.abs(tdi_projection - save_arr)), 0.0)
 
 
