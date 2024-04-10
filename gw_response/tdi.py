@@ -210,6 +210,15 @@ tdi_fun_list = [
     tdi_AE_Sagnac_zeta_matrix,
 ]
 
+TDI_labels = {
+    "XYZ": ["XX", "YY", "ZZ"],
+    "AET": ["AA", "EE", "TT"],
+    "Sagnac": [r"$\alpha \alpha$", r"$\beta \beta$", r"$\gamma \gamma$"],
+    "AET_Sagnac": [r"$\mathcal{AA}$", r"$\mathcal{EE}$", r"$\mathcal{TT}$"],
+    "AE_zeta": ["AA", "EE", r"$\zeta \zeta$"],
+    "AE_Sagnac_zeta": [r"$\mathcal{AA}$", r"$\mathcal{EE}$", r"$\zeta \zeta$"],
+}
+
 
 @jax.jit
 def tdi_matrix(TDI_idx, arms_matrix_rescaled, x_vector):
