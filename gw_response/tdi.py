@@ -16,9 +16,7 @@ def sin_factors(arms_matrix_rescaled, x_vector):
     ### arms ordered as 2-1, 3-2, 1-3, 2-1, 2-3, 3-1
     arm_lengths = jnp.sqrt(
         jnp.sqrt(
-            jnp.einsum(
-                "...ij,...ij->...j", arms_matrix_rescaled, arms_matrix_rescaled
-            )
+            jnp.einsum("...ij,...ij->...j", arms_matrix_rescaled, arms_matrix_rescaled)
         )
     )
 
@@ -76,13 +74,9 @@ def tdi_XYZ_matrix(arms_matrix_rescaled, x_vector):
     )
 
     ### These two guys are configurations, x_vector, TDI, arms (back to 6!)
-    retarded_arm1 = jnp.einsum(
-        "...ik,...ijk->...ijk", permuted_sin_fac, single_arm
-    )
+    retarded_arm1 = jnp.einsum("...ik,...ijk->...ijk", permuted_sin_fac, single_arm)
 
-    retarded_arm2 = jnp.einsum(
-        "...ik,...ijk->...ijk", sin_fac, flipped_single_arm
-    )
+    retarded_arm2 = jnp.einsum("...ik,...ijk->...ijk", sin_fac, flipped_single_arm)
 
     # the output has shape configurations, x_vector, TDI_indexes, arms
     return retarded_arm1 - retarded_arm2
@@ -90,27 +84,24 @@ def tdi_XYZ_matrix(arms_matrix_rescaled, x_vector):
 
 @jax.jit
 def tdi_zeta_matrix(arms_matrix_rescaled, x_vector):
-    ### zeta is D12 (η31 − η32) + D23(η12 − η13) + D31(η23 − η21)
+    ### zeta is (D21 η31− D31 η21) +(D32 η12 −D12 η32) +(D13 η23 −D23 η13)
 
-    ### This guy will be configurations, x_vector, arms / 2
+    ### This guy will be configurations, x_vector, arms
     ### arms are ordered as (12, 23, 31, 21, 32, 13)
-    t_retarded_factor = arm_length_exponential(arms_matrix_rescaled, x_vector)[
-        ..., :3
-    ]
+    t_retarded_factor = arm_length_exponential(arms_matrix_rescaled, x_vector)
 
-    ### This is 3 x 6
-    identities = jnp.concatenate(
-        (
-            jnp.roll(jnp.identity(3), -1, axis=-1),
-            -jnp.roll(jnp.identity(3), 1, axis=-1),
-        ),
-        axis=-1,
+    ### This will be configurations, x_vector, arms (just 3 arms) 32, 13, 21
+    plus_terms = jnp.einsum(
+        "i,...ki->...ki", jnp.ones(3), jnp.roll(t_retarded_factor[..., 3:], -1, axis=-1)
     )
 
-    ### This will be configurations, x_vector, arms / 2, arms
-    to_sum = jnp.einsum("ij,...ki->...kij", identities, t_retarded_factor)
+    ### This will be configurations, x_vector, arms (just 3 arms) 31, 12, 23
+    minus_terms = jnp.einsum(
+        "i,...ki->...ki", -jnp.ones(3), jnp.roll(t_retarded_factor[..., :3], 1, axis=-1)
+    )
 
-    return jnp.sum(to_sum, axis=-1)
+    ### This guy will be configurations, x_vector, TDI, arms
+    return jnp.concatenate((plus_terms, minus_terms), axis=-1)[..., jnp.newaxis, :]
 
 
 @jax.jit
@@ -149,9 +140,7 @@ def tdi_Sagnac_matrix(arms_matrix_rescaled, x_vector):
 
     term2 = (
         rolled_two_identity
-        + jnp.einsum(
-            "...ijk,...ij->...ijk", rolled_identity, permuted_two_flipped_arms
-        )
+        + jnp.einsum("...ijk,...ij->...ijk", rolled_identity, permuted_two_flipped_arms)
         + jnp.einsum(
             "...ijk,...ij->...ijk",
             identity,
@@ -169,9 +158,7 @@ def tdi_AET_matrix(arms_matrix_rescaled, x_vector):
     tdi_mat = tdi_XYZ_matrix(arms_matrix_rescaled, x_vector)
 
     ### XYZ_to_AET is TDI TDI, we have to rotate the TDI index
-    return jnp.einsum(
-        "jk,...ikl->...ijl", BasisTransformations().XYZ_to_AET, tdi_mat
-    )
+    return jnp.einsum("jk,...ikl->...ijl", BasisTransformations().XYZ_to_AET, tdi_mat)
 
 
 @jax.jit
@@ -180,34 +167,29 @@ def tdi_AET_Sagnac_matrix(arms_matrix_rescaled, x_vector):
     tdi_mat = tdi_Sagnac_matrix(arms_matrix_rescaled, x_vector)
 
     ### XYZ_to_AET is TDI TDI, we have to rotate the TDI index
-    return jnp.einsum(
-        "jk,...ikl->...ijl", BasisTransformations().XYZ_to_AET, tdi_mat
-    )
+    return jnp.einsum("jk,...ikl->...ijl", BasisTransformations().XYZ_to_AET, tdi_mat)
 
 
 @jax.jit
 def tdi_AE_zeta_matrix(arms_matrix_rescaled, x_vector):
     ### tdi_mat has shape configuration, x_vector, TDI, arms
-    tdi_mat = tdi_AET_matrix(arms_matrix_rescaled, x_vector)
+    tdi_mat_AET = tdi_AET_matrix(arms_matrix_rescaled, x_vector)
 
-    ### Change last column to zeta
-    tdi_mat.at[:, :, 2, :].set(
-        tdi_zeta_matrix(arms_matrix_rescaled, x_vector)[:, :, 0, :]
-    )
+    ### zeta has shape configuration, x_vector, TDI, arms
+    zeta = tdi_zeta_matrix(arms_matrix_rescaled, x_vector)
 
-    return tdi_mat
+    return jnp.concatenate((tdi_mat_AET[..., :2, :], zeta), axis=-2)
 
 
 @jax.jit
 def tdi_AE_Sagnac_zeta_matrix(arms_matrix_rescaled, x_vector):
     ### tdi_mat has shape configuration, x_vector, TDI, arms
-    tdi_mat = tdi_AET_Sagnac_matrix(arms_matrix_rescaled, x_vector)
+    tdi_mat_AET = tdi_AET_Sagnac_matrix(arms_matrix_rescaled, x_vector)
 
-    ### Change last column to zeta
-    tdi_mat.at[:, :, 2, :].set(
-        tdi_zeta_matrix(arms_matrix_rescaled, x_vector)[:, :, 0, :]
-    )
-    return tdi_mat
+    ### zeta has shape configuration, x_vector, TDI, arms
+    zeta = tdi_zeta_matrix(arms_matrix_rescaled, x_vector)
+
+    return jnp.concatenate((tdi_mat_AET[..., :2, :], zeta), axis=-2)
 
 
 TDI_map = {
@@ -215,8 +197,8 @@ TDI_map = {
     "AET": 1,
     "Sagnac": 2,
     "AET_Sagnac": 3,
-    # "AE_zeta": 4,
-    # "AE_Sagnac_zeta": 5,
+    "AE_zeta": 4,
+    "AE_Sagnac_zeta": 5,
 }
 
 tdi_fun_list = [
@@ -224,9 +206,18 @@ tdi_fun_list = [
     tdi_AET_matrix,
     tdi_Sagnac_matrix,
     tdi_AET_Sagnac_matrix,
-    # tdi_AE_zeta_matrix,
-    # tdi_AE_Sagnac_zeta_matrix,
+    tdi_AE_zeta_matrix,
+    tdi_AE_Sagnac_zeta_matrix,
 ]
+
+TDI_labels = {
+    "XYZ": ["XX", "YY", "ZZ"],
+    "AET": ["AA", "EE", "TT"],
+    "Sagnac": [r"$\alpha \alpha$", r"$\beta \beta$", r"$\gamma \gamma$"],
+    "AET_Sagnac": [r"$\mathcal{AA}$", r"$\mathcal{EE}$", r"$\mathcal{TT}$"],
+    "AE_zeta": ["AA", "EE", r"$\zeta \zeta$"],
+    "AE_Sagnac_zeta": [r"$\mathcal{AA}$", r"$\mathcal{EE}$", r"$\zeta \zeta$"],
+}
 
 
 @jax.jit
