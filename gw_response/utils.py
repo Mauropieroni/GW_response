@@ -66,12 +66,23 @@ class Pixel:
         NPIX = hp.nside2npix(self.NSIDE)
         angular_map = jnp.array(
             jnp.rollaxis(
-                jnp.array(hp.pix2ang(self.NSIDE, jnp.arange(NPIX))), -1
+                jnp.array(
+                    hp.pix2ang(
+                        self.NSIDE,
+                        jnp.arange(NPIX),
+                    )
+                ),
+                -1,
             )
         )
         theta_pixel = jnp.array(angular_map[:, 0])
         phi_pixel = jnp.array(angular_map[:, 1])
-        return NPIX, angular_map, theta_pixel, phi_pixel
+        return (
+            NPIX,
+            angular_map,
+            theta_pixel,
+            phi_pixel,
+        )
 
     def change_NSIDE(self, NSIDE):
         """
@@ -117,10 +128,16 @@ def arm_length_exponential(arms_matrix_rescaled, x_vector):
     """
     arm_lengths = jnp.sqrt(
         jnp.einsum(
-            "...ij,...ij->...j", arms_matrix_rescaled, arms_matrix_rescaled
+            "...ij,...ij->...j",
+            arms_matrix_rescaled,
+            arms_matrix_rescaled,
         )
     )
-    xij = jnp.einsum("i,...j->...ij", -1j * x_vector, arm_lengths)
+    xij = jnp.einsum(
+        "i,...j->...ij",
+        -1j * x_vector,
+        arm_lengths,
+    )
     return jnp.exp(xij)
 
 

@@ -73,9 +73,21 @@ class BasisTransformations:
     XYZ_to_AET: jnp.array = field(
         default_factory=lambda: jnp.array(
             [
-                [-1 / jnp.sqrt(2), 0, 1 / jnp.sqrt(2)],
-                [1 / jnp.sqrt(6), -2 / jnp.sqrt(6), 1 / jnp.sqrt(6)],
-                [1 / jnp.sqrt(3), 1 / jnp.sqrt(3), 1 / jnp.sqrt(3)],
+                [
+                    -1 / jnp.sqrt(2),
+                    0,
+                    1 / jnp.sqrt(2),
+                ],
+                [
+                    1 / jnp.sqrt(6),
+                    -2 / jnp.sqrt(6),
+                    1 / jnp.sqrt(6),
+                ],
+                [
+                    1 / jnp.sqrt(3),
+                    1 / jnp.sqrt(3),
+                    1 / jnp.sqrt(3),
+                ],
             ]
         )
     )

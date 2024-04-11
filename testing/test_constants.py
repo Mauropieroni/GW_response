@@ -14,25 +14,37 @@ class TestConstant(unittest.TestCase):
         self.assertEqual(constants.AU, 149597870700.0)
         for i in range(3):
             self.assertEqual(
-                constants.cmb_dipole[i], [-0.972, 0.137, -0.191][i]
+                constants.cmb_dipole[i],
+                [-0.972, 0.137, -0.191][i],
             )
 
     def test_basis_transformations(self):
         basis_transformations = gwr.BasisTransformations()
-        self.assertEqual(basis_transformations.XYZ_to_AET.shape, (3, 3))
+        self.assertEqual(
+            basis_transformations.XYZ_to_AET.shape,
+            (3, 3),
+        )
         self.assertAlmostEqual(
             jnp.sum(
                 jnp.abs(
                     basis_transformations.XYZ_to_AET
                     - jnp.array(
                         [
-                            [-1 / jnp.sqrt(2), 0, 1 / jnp.sqrt(2)],
+                            [
+                                -1 / jnp.sqrt(2),
+                                0,
+                                1 / jnp.sqrt(2),
+                            ],
                             [
                                 1 / jnp.sqrt(6),
                                 -2 / jnp.sqrt(6),
                                 1 / jnp.sqrt(6),
                             ],
-                            [1 / jnp.sqrt(3), 1 / jnp.sqrt(3), 1 / jnp.sqrt(3)],
+                            [
+                                1 / jnp.sqrt(3),
+                                1 / jnp.sqrt(3),
+                                1 / jnp.sqrt(3),
+                            ],
                         ]
                     ),
                 )

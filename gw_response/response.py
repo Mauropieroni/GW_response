@@ -11,7 +11,11 @@ from .single_link import (
     get_single_link_response,
 )
 from .tdi import TDI_map
-from .single_link import linear_response_angular, integrand, response_integrated
+from .single_link import (
+    linear_response_angular,
+    integrand,
+    response_integrated,
+)
 
 
 @chex.dataclass
@@ -25,9 +29,7 @@ class Response(object):
     integrated = {}
 
     def __post_init__(self, **kwargs):
-        self.get_positions = lambda times: self.det.satellite_positions(
-            times, **kwargs
-        )
+        self.get_positions = lambda times: self.det.satellite_positions(times, **kwargs)
         self.get_arms = lambda times: self.det.detector_arms(times, **kwargs)
 
     # @partial(jax.jit, static_argnums=(0, 1, 2, 3, 4))
@@ -119,7 +121,12 @@ class Response(object):
         return val
 
     # @partial(jax.jit, static_argnums=(0, 1, 2, 3))
-    def get_integrated(self, TDI="XYZ", polarization="LR", verbose=True):
+    def get_integrated(
+        self,
+        TDI="XYZ",
+        polarization="LR",
+        verbose=True,
+    ):
         integrated = {}
         for p in polarization:
             ### Computes the integral for the TDI variable
@@ -163,6 +170,4 @@ class Response(object):
         )
 
         ### Computes the integral for the TDI variable
-        self.integrated[TDI] = self.get_integrated(
-            TDI=TDI, polarization=polarization
-        )
+        self.integrated[TDI] = self.get_integrated(TDI=TDI, polarization=polarization)

@@ -12,10 +12,16 @@ class TestNoise(unittest.TestCase):
         freqs = jnp.logspace(-5, 0, 300)
         acc_noise = gwr.LISA_acceleration_noise(freqs, acc_param=1.0)
         save_arr = np.load(TEST_DATA_PATH + "acc_noise.npy")
-        self.assertAlmostEqual(jnp.sum(jnp.abs(acc_noise - save_arr)), 0.0)
+        self.assertAlmostEqual(
+            jnp.sum(jnp.abs(acc_noise - save_arr)),
+            0.0,
+        )
         int_noise = gwr.LISA_interferometric_noise(freqs, inter_param=1.0)
         save_arr = np.load(TEST_DATA_PATH + "int_noise.npy")
-        self.assertAlmostEqual(jnp.sum(jnp.abs(int_noise - save_arr)), 0.0)
+        self.assertAlmostEqual(
+            jnp.sum(jnp.abs(int_noise - save_arr)),
+            0.0,
+        )
 
     def test_tm_noise_single_link(self):
         freqs = jnp.logspace(-5, 0, 300)
