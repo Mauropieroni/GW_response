@@ -13,9 +13,7 @@ class TestConstant(unittest.TestCase):
         self.assertEqual(constants.Hubble_over_h, 3.24e-18)
         self.assertEqual(constants.AU, 149597870700.0)
         for i in range(3):
-            self.assertEqual(
-                constants.cmb_dipole[i], [-0.972, 0.137, -0.191][i]
-            )
+            self.assertEqual(constants.cmb_dipole[i], [-0.972, 0.137, -0.191][i])
 
     def test_basis_transformations(self):
         basis_transformations = gwr.BasisTransformations()

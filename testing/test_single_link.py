@@ -68,8 +68,7 @@ class TestSingleLink(unittest.TestCase):
         )
         sp1, sp2, sp3 = gwr.shift_to_center(p1, p2, p3)
         position_exp = gwr.position_exponential(
-            positions_detector_frame=jnp.array([[sp1, sp2, sp3]])
-            / lisa.armlength,
+            positions_detector_frame=jnp.array([[sp1, sp2, sp3]]) / lisa.armlength,
             unit_wavevector=unit_vector,
             x_vector=lisa.x(freqs),
         )
@@ -91,9 +90,7 @@ class TestSingleLink(unittest.TestCase):
             polarization_tensor=e1L,
         )
         save_arr = np.load(TEST_DATA_PATH + "geometrical_factor.npy")
-        self.assertAlmostEqual(
-            jnp.sum(jnp.abs(geomtrical_factor - save_arr)), 0.0
-        )
+        self.assertAlmostEqual(jnp.sum(jnp.abs(geomtrical_factor - save_arr)), 0.0)
 
     def test_xi_k_Avec(self):
         lisa = gwr.LISA()
@@ -144,9 +141,7 @@ class TestSingleLink(unittest.TestCase):
             xi_k_Avec=xi_k_Avec,
         )
         save_arr = np.load(TEST_DATA_PATH + "single_link_response.npy")
-        self.assertAlmostEqual(
-            jnp.sum(jnp.abs(single_link_response - save_arr)), 0.0
-        )
+        self.assertAlmostEqual(jnp.sum(jnp.abs(single_link_response - save_arr)), 0.0)
         linear_response_tdi = gwr.linear_response_angular(
             TDI_idx=0,  # XYZ basis
             single_link=single_link_response,
@@ -154,9 +149,7 @@ class TestSingleLink(unittest.TestCase):
             x_vector=lisa.x(freqs),
         )
         save_arr = np.load(TEST_DATA_PATH + "linear_response_tdi.npy")
-        self.assertAlmostEqual(
-            jnp.sum(jnp.abs(linear_response_tdi - save_arr)), 0.0
-        )
+        self.assertAlmostEqual(jnp.sum(jnp.abs(linear_response_tdi - save_arr)), 0.0)
         quadratic_angular_response = gwr.response_angular(
             TDI_idx=0,  # XYZ basis
             single_link=single_link_response,
@@ -167,26 +160,18 @@ class TestSingleLink(unittest.TestCase):
         self.assertAlmostEqual(
             jnp.sum(jnp.abs(quadratic_angular_response - save_arr)), 0.0
         )
-        integrated_response = gwr.response_integrated(
-            quadratic_angular_response
-        )
+        integrated_response = gwr.response_integrated(quadratic_angular_response)
         save_arr = np.load(TEST_DATA_PATH + "integrated_response.npy")
-        self.assertAlmostEqual(
-            jnp.sum(jnp.abs(integrated_response - save_arr)), 0.0
-        )
+        self.assertAlmostEqual(jnp.sum(jnp.abs(integrated_response - save_arr)), 0.0)
         quadratic_angular_response_AET = gwr.response_angular(
             TDI_idx=1,  # AET basis
             single_link=single_link_response,
             arms_matrix_rescaled=lisa.detector_arms(0.0) / lisa.armlength,
             x_vector=lisa.x(freqs),
         )
-        integrated_response = gwr.response_integrated(
-            quadratic_angular_response_AET
-        )
+        integrated_response = gwr.response_integrated(quadratic_angular_response_AET)
         save_arr = np.load(TEST_DATA_PATH + "integrated_response_AET.npy")
-        self.assertAlmostEqual(
-            jnp.sum(jnp.abs(integrated_response - save_arr)), 0.0
-        )
+        self.assertAlmostEqual(jnp.sum(jnp.abs(integrated_response - save_arr)), 0.0)
 
 
 if __name__ == "__main__":

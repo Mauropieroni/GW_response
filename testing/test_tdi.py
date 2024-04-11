@@ -62,9 +62,7 @@ class TestTDI(unittest.TestCase):
             x_vector=lisa.x(freqs),
         )
         save_arr = np.load(TEST_DATA_PATH + "tdi_AE_Sagnac_zeta.npy")
-        self.assertAlmostEqual(
-            jnp.sum(jnp.abs(tdi_AE_Sagnac_zeta - save_arr)), 0.0
-        )
+        self.assertAlmostEqual(jnp.sum(jnp.abs(tdi_AE_Sagnac_zeta - save_arr)), 0.0)
         tdi_matrix = gwr.tdi_matrix(
             TDI_idx=0,  # XYZ basis
             arms_matrix_rescaled=lisa.detector_arms(0.0) / lisa.armlength,

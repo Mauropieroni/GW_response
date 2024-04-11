@@ -502,6 +502,4 @@ class LISA(Detector):
             else time_in_years
         )
 
-        return LISA_arms_matrix(
-            time_in_years, self.ps.AU, self.ecc, self.which_orbits
-        )
+        return LISA_arms_matrix(time_in_years, self.ps.AU, self.ecc, self.which_orbits)

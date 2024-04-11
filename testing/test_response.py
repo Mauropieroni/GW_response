@@ -40,13 +40,9 @@ class TestResponse(unittest.TestCase):
             polarization="LR",
         )
         save_arr = np.load(TEST_DATA_PATH + "linear_integrand_LL.npy")
-        self.assertAlmostEqual(
-            jnp.sum(jnp.abs(linear_integrand["LL"] - save_arr)), 0.0
-        )
+        self.assertAlmostEqual(jnp.sum(jnp.abs(linear_integrand["LL"] - save_arr)), 0.0)
         save_arr = np.load(TEST_DATA_PATH + "linear_integrand_RR.npy")
-        self.assertAlmostEqual(
-            jnp.sum(jnp.abs(linear_integrand["RR"] - save_arr)), 0.0
-        )
+        self.assertAlmostEqual(jnp.sum(jnp.abs(linear_integrand["RR"] - save_arr)), 0.0)
         response.compute_detector(
             times_in_years=jnp.array([0.0]),
             theta_array=theta,

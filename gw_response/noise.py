@@ -30,9 +30,7 @@ def LISA_acceleration_noise(frequency, acc_param=3.0):
 
     first = 1 + (4e-4 / frequency) ** 2
     second = 1 + (frequency / 8e-3) ** 4
-    third = (2 * jnp.pi * frequency) ** (-4) * (
-        2 * jnp.pi * frequency / 3e8
-    ) ** 2
+    third = (2 * jnp.pi * frequency) ** (-4) * (2 * jnp.pi * frequency / 3e8) ** 2
     # TODO: Change 3e8 to ps.light_speed
     return acc_param**2 * 1e-30 * first * second * third
 
@@ -162,14 +160,10 @@ def tdi_projection(
     tdi_mat = tdi_matrix(TDI_idx, arms_matrix_rescaled, x_vector)
 
     ### The shape will be configurations, frequency, tdi, arms
-    first_contraction = jnp.einsum(
-        "...ijk,...ikl->...ijl", tdi_mat, single_link_mat
-    )
+    first_contraction = jnp.einsum("...ijk,...ikl->...ijl", tdi_mat, single_link_mat)
 
     ### The shape will be configurations, frequency, tdi, tdi
-    res = jnp.einsum(
-        "...ijk,...ilk->...ijl", jnp.conjugate(tdi_mat), first_contraction
-    )
+    res = jnp.einsum("...ijk,...ilk->...ijl", jnp.conjugate(tdi_mat), first_contraction)
 
     return res
 
@@ -188,9 +182,7 @@ def _noise_TM_matrix(
         frequency, TM_acceleration_parameters, arms_matrix_rescaled, x_vector
     )
 
-    return tdi_projection(
-        TDI_idx, single_link_mat, arms_matrix_rescaled, x_vector
-    )
+    return tdi_projection(TDI_idx, single_link_mat, arms_matrix_rescaled, x_vector)
 
 
 def noise_TM_matrix(
@@ -203,11 +195,8 @@ def noise_TM_matrix(
     """TO ADD."""
 
     if (
-        len(TM_acceleration_parameters.shape)
-        != len(arms_matrix_rescaled.shape) - 1
-    ) or (
-        TM_acceleration_parameters.shape[-1] != arms_matrix_rescaled.shape[-1]
-    ):
+        len(TM_acceleration_parameters.shape) != len(arms_matrix_rescaled.shape) - 1
+    ) or (TM_acceleration_parameters.shape[-1] != arms_matrix_rescaled.shape[-1]):
         raise ValueError(
             "TM_acceleration_parameters and arms_matrix_rescaled"
             + " do not have compatible shapes",
@@ -238,9 +227,7 @@ def _noise_OMS_matrix(
         frequency, OMS_parameters, arms_matrix_rescaled, x_vector
     )
 
-    return tdi_projection(
-        TDI_idx, single_link_mat, arms_matrix_rescaled, x_vector
-    )
+    return tdi_projection(TDI_idx, single_link_mat, arms_matrix_rescaled, x_vector)
 
 
 def noise_OMS_matrix(
