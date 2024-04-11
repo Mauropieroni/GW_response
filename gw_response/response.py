@@ -11,11 +11,7 @@ from .single_link import (
     get_single_link_response,
 )
 from .tdi import TDI_map
-from .single_link import (
-    linear_response_angular,
-    integrand,
-    response_integrated,
-)
+from .single_link import linear_response_angular, integrand, response_integrated
 
 
 @chex.dataclass
@@ -121,12 +117,7 @@ class Response(object):
         return val
 
     # @partial(jax.jit, static_argnums=(0, 1, 2, 3))
-    def get_integrated(
-        self,
-        TDI="XYZ",
-        polarization="LR",
-        verbose=True,
-    ):
+    def get_integrated(self, TDI="XYZ", polarization="LR", verbose=True):
         integrated = {}
         for p in polarization:
             ### Computes the integral for the TDI variable

@@ -105,11 +105,7 @@ class TestLISA(unittest.TestCase):
             0.0,
         )
         arm_lengths = jnp.sqrt(
-            jnp.einsum(
-                "tij,tij->tj",
-                lisa_arms_matrix,
-                lisa_arms_matrix,
-            )
+            jnp.einsum("tij,tij->tj", lisa_arms_matrix, lisa_arms_matrix)
         )
         save_arr = np.load(TEST_DATA_PATH + "arm_lengths.npy")
         self.assertAlmostEqual(
@@ -122,22 +118,13 @@ class TestLISA(unittest.TestCase):
         lisa = gwr.LISA()
         frequencies = lisa.frequency_vec(10)
         save_arr = np.load(TEST_DATA_PATH + "frequencies.npy")
-        self.assertAlmostEqual(
-            jnp.sum(jnp.abs(frequencies - save_arr)),
-            0.0,
-        )
+        self.assertAlmostEqual(jnp.sum(jnp.abs(frequencies - save_arr)), 0.0)
         kl_vector = lisa.klvector(frequencies)
         save_arr = np.load(TEST_DATA_PATH + "kl_vector.npy")
-        self.assertAlmostEqual(
-            jnp.sum(jnp.abs(kl_vector - save_arr)),
-            0.0,
-        )
+        self.assertAlmostEqual(jnp.sum(jnp.abs(kl_vector - save_arr)), 0.0)
         x_vector = lisa.x(frequencies)
         save_arr = np.load(TEST_DATA_PATH + "x_vector.npy")
-        self.assertAlmostEqual(
-            jnp.sum(jnp.abs(x_vector - save_arr)),
-            0.0,
-        )
+        self.assertAlmostEqual(jnp.sum(jnp.abs(x_vector - save_arr)), 0.0)
         satellite_positions = lisa.satellite_positions(time_in_years)
         save_arr = np.load(TEST_DATA_PATH + "satellite_positions.npy")
         self.assertAlmostEqual(

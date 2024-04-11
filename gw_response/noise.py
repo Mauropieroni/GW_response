@@ -73,9 +73,7 @@ def single_link_TM_acceleration_noise_variance(
     ### This would be a diag matrix on the last 2 indexes,
     ### the shape is configurations, x_vector, arms, arms
     t_retarded_coeffs = jnp.einsum(
-        "ij,...kj->...kij",
-        jnp.identity(6),
-        t_retarded_factor,
+        "ij,...kj->...kij", jnp.identity(6), t_retarded_factor
     )
 
     ### This would be a diag matrix on the last 2 indexes,
@@ -88,9 +86,7 @@ def single_link_TM_acceleration_noise_variance(
 
     ### The shape will be configurations, arms, arms
     parameters_matrix = jnp.einsum(
-        "ij,...j->...ij",
-        jnp.identity(6),
-        TM_acceleration_parameters**2,
+        "ij,...j->...ij", jnp.identity(6), TM_acceleration_parameters**2
     )
 
     ### The shape will be configurations, arms, arms
@@ -105,18 +101,14 @@ def single_link_TM_acceleration_noise_variance(
 
     ### The shape will be configurations, frequency, arms, arms
     noise_matrix = jnp.einsum(
-        "...ij,k->...kij",
-        parameters_matrix + flipped_parameters_matrix,
-        N_acc,
+        "...ij,k->...kij", parameters_matrix + flipped_parameters_matrix, N_acc
     )
 
     ### t_retarded_coeffs is configurations, x_vector, arms, arms
     ### flipped_parameters_matrix is configurations, arms, arms
     ### The shape will be configurations, frequency, arms, arms
     delayed_1 = jnp.einsum(
-        "...kij,...ij->...kij",
-        t_retarded_coeffs,
-        flipped_parameters_matrix,
+        "...kij,...ij->...kij", t_retarded_coeffs, flipped_parameters_matrix
     )
 
     delayed_2 = jnp.einsum(
@@ -137,29 +129,20 @@ def single_link_TM_acceleration_noise_variance(
 
 @jax.jit
 def single_link_OMS_noise_variance(
-    frequency,
-    OMS_parameters,
-    arms_matrix_rescaled,
-    x_vector,
+    frequency, OMS_parameters, arms_matrix_rescaled, x_vector
 ):
     """TO ADD."""
 
     ### The shape will be configurations, arms, arms
     parameters_matrix = jnp.einsum(
-        "ij,...j->...ij",
-        jnp.identity(6),
-        OMS_parameters**2,
+        "ij,...j->...ij", jnp.identity(6), OMS_parameters**2
     )
 
     ### The shape will be frequency
     N_int = LISA_interferometric_noise(frequency, inter_param=1.0)
 
     ### The shape will be configurations, frequency, arms, arms
-    return jnp.einsum(
-        "...ij,k->...kij",
-        parameters_matrix,
-        N_int,
-    )
+    return jnp.einsum("...ij,k->...kij", parameters_matrix, N_int)
 
 
 @jax.jit
@@ -177,18 +160,10 @@ def tdi_projection(
     tdi_mat = tdi_matrix(TDI_idx, arms_matrix_rescaled, x_vector)
 
     ### The shape will be configurations, frequency, tdi, arms
-    first_contraction = jnp.einsum(
-        "...ijk,...ikl->...ijl",
-        tdi_mat,
-        single_link_mat,
-    )
+    first_contraction = jnp.einsum("...ijk,...ikl->...ijl", tdi_mat, single_link_mat)
 
     ### The shape will be configurations, frequency, tdi, tdi
-    res = jnp.einsum(
-        "...ijk,...ilk->...ijl",
-        jnp.conjugate(tdi_mat),
-        first_contraction,
-    )
+    res = jnp.einsum("...ijk,...ilk->...ijl", jnp.conjugate(tdi_mat), first_contraction)
 
     return res
 
@@ -204,18 +179,10 @@ def _noise_TM_matrix(
     """TO ADD."""
 
     single_link_mat = single_link_TM_acceleration_noise_variance(
-        frequency,
-        TM_acceleration_parameters,
-        arms_matrix_rescaled,
-        x_vector,
+        frequency, TM_acceleration_parameters, arms_matrix_rescaled, x_vector
     )
 
-    return tdi_projection(
-        TDI_idx,
-        single_link_mat,
-        arms_matrix_rescaled,
-        x_vector,
-    )
+    return tdi_projection(TDI_idx, single_link_mat, arms_matrix_rescaled, x_vector)
 
 
 def noise_TM_matrix(
@@ -257,18 +224,10 @@ def _noise_OMS_matrix(
     """TO ADD."""
 
     single_link_mat = single_link_OMS_noise_variance(
-        frequency,
-        OMS_parameters,
-        arms_matrix_rescaled,
-        x_vector,
+        frequency, OMS_parameters, arms_matrix_rescaled, x_vector
     )
 
-    return tdi_projection(
-        TDI_idx,
-        single_link_mat,
-        arms_matrix_rescaled,
-        x_vector,
-    )
+    return tdi_projection(TDI_idx, single_link_mat, arms_matrix_rescaled, x_vector)
 
 
 def noise_OMS_matrix(
@@ -291,11 +250,7 @@ def noise_OMS_matrix(
         )
 
     return _noise_OMS_matrix(
-        TDI_idx,
-        frequency,
-        OMS_parameters,
-        arms_matrix_rescaled,
-        x_vector,
+        TDI_idx, frequency, OMS_parameters, arms_matrix_rescaled, x_vector
     )
 
 
@@ -315,9 +270,5 @@ def noise_matrix(
         arms_matrix_rescaled,
         x_vector,
     ) + noise_OMS_matrix(
-        TDI_idx,
-        frequency,
-        OMS_parameters,
-        arms_matrix_rescaled,
-        x_vector,
+        TDI_idx, frequency, OMS_parameters, arms_matrix_rescaled, x_vector
     )

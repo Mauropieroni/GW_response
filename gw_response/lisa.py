@@ -7,10 +7,7 @@ from functools import partial
 
 from .constants import PhysicalConstants
 from .detector import Detector
-from .utils import (
-    coordinates_numerical,
-    arms_matrix_numerical,
-)
+from .utils import coordinates_numerical, arms_matrix_numerical
 
 
 @jax.jit
@@ -69,10 +66,7 @@ def LISA_beta_par(index):
 
 @jax.jit
 def LISA_satellite_x_coordinate_analytical(
-    index,
-    time_in_years,
-    orbit_radius,
-    eccentricity,
+    index, time_in_years, orbit_radius, eccentricity
 ):
     """
     Computes the x-coordinate of a LISA satellite in an analytical orbit model.
@@ -112,10 +106,7 @@ def LISA_satellite_x_coordinate_analytical(
 
 @jax.jit
 def LISA_satellite_y_coordinate_analytical(
-    index,
-    time_in_years,
-    orbit_radius,
-    eccentricity,
+    index, time_in_years, orbit_radius, eccentricity
 ):
     """
     Computes the y-coordinate of a LISA satellite in an analytical orbit model.
@@ -158,10 +149,7 @@ def LISA_satellite_y_coordinate_analytical(
 
 @jax.jit
 def LISA_satellite_z_coordinate_analytical(
-    index,
-    time_in_years,
-    orbit_radius,
-    eccentricity,
+    index, time_in_years, orbit_radius, eccentricity
 ):
     """
     Computes the z-coordinate of a LISA satellite in an analytical orbit model.
@@ -194,10 +182,7 @@ def LISA_satellite_z_coordinate_analytical(
 
 @jax.jit
 def LISA_satellite_coordinates_analytical(
-    index,
-    time_in_years,
-    orbit_radius,
-    eccentricity,
+    index, time_in_years, orbit_radius, eccentricity
 ):
     """
     Computes the three-dimensional coordinates of a LISA satellite in an
@@ -230,30 +215,20 @@ def LISA_satellite_coordinates_analytical(
     return jnp.array(
         [
             LISA_satellite_x_coordinate_analytical(
-                index,
-                time_in_years,
-                orbit_radius,
-                eccentricity,
+                index, time_in_years, orbit_radius, eccentricity
             ),
             LISA_satellite_y_coordinate_analytical(
-                index,
-                time_in_years,
-                orbit_radius,
-                eccentricity,
+                index, time_in_years, orbit_radius, eccentricity
             ),
             LISA_satellite_z_coordinate_analytical(
-                index,
-                time_in_years,
-                orbit_radius,
-                eccentricity,
+                index, time_in_years, orbit_radius, eccentricity
             ),
         ]
     )
 
 
 LISA_satellite_coordinates_analytical_vm = jax.vmap(
-    LISA_satellite_coordinates_analytical,
-    in_axes=(0, None, None, None),
+    LISA_satellite_coordinates_analytical, in_axes=(0, None, None, None)
 )
 
 
@@ -277,11 +252,7 @@ def LISA_arms_matrix_analytical(time_in_years, orbit_radius, eccentricity):
     This function is vital for analyzing the spatial arrangement and relative
     positions of the LISA satellites in their orbits.
     """
-    (
-        m1,
-        m2,
-        m3,
-    ) = LISA_satellite_coordinates_analytical_vm(
+    m1, m2, m3 = LISA_satellite_coordinates_analytical_vm(
         jnp.array([1, 2, 3]),
         time_in_years,
         orbit_radius,
@@ -320,10 +291,7 @@ LISA_arms_functions = [
 
 @partial(jax.jit, static_argnums=(3,))
 def LISA_satellite_positions(
-    time_in_years,
-    orbit_radius,
-    eccentricity,
-    which_orbits="analytic",
+    time_in_years, orbit_radius, eccentricity, which_orbits="analytic"
 ):
     """
     Calculates the positions of LISA satellites based on the specified orbit
@@ -356,10 +324,7 @@ def LISA_satellite_positions(
 
 @partial(jax.jit, static_argnums=(3,))
 def LISA_arms_matrix(
-    time_in_years,
-    orbit_radius,
-    eccentricity,
-    which_orbits="analytic",
+    time_in_years, orbit_radius, eccentricity, which_orbits="analytic"
 ):
     """
     Computes the arm matrix for the LISA constellation based on a specified
@@ -513,10 +478,7 @@ class LISA(Detector):
             else time_in_years
         )
         return LISA_satellite_positions(
-            time_in_years,
-            self.ps.AU,
-            self.ecc,
-            self.which_orbits,
+            time_in_years, self.ps.AU, self.ecc, self.which_orbits
         )
 
     def detector_arms(self, time_in_years):
@@ -540,9 +502,4 @@ class LISA(Detector):
             else time_in_years
         )
 
-        return LISA_arms_matrix(
-            time_in_years,
-            self.ps.AU,
-            self.ecc,
-            self.which_orbits,
-        )
+        return LISA_arms_matrix(time_in_years, self.ps.AU, self.ecc, self.which_orbits)
