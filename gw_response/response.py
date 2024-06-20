@@ -57,7 +57,7 @@ class Response(object):
         val = {}
 
         for p in ppol.keys():
-            val[2 * p] = get_single_link_response(
+            val[p] = get_single_link_response(
                 ppol[p],
                 arms_matrix,
                 k_vector,
@@ -82,10 +82,9 @@ class Response(object):
         x_array = self.det.x(frequency_array)
 
         for p in pol:
-            ### TO DO this should use only 1 p
-            val[2 * p] = linear_response_angular(
+            val[p] = linear_response_angular(
                 TDI_map[TDI],
-                single_link[2 * p],
+                single_link[p],
                 arms_matrix,
                 x_array,
             )
@@ -109,7 +108,7 @@ class Response(object):
         for p in pol:
             val[2 * p] = integrand(
                 TDI_map[TDI],
-                single_link[2 * p],
+                single_link[p],
                 arms_matrix,
                 x_array,
             )
