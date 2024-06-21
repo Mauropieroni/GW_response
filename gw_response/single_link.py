@@ -214,7 +214,7 @@ def linear_response_angular(TDI_idx, single_link, arms_matrix_rescaled, x_vector
 
 
 @jax.jit
-def response_angular(TDI_idx, single_link, arms_matrix_rescaled, x_vector):
+def quadratic_response_angular(TDI_idx, single_link, arms_matrix_rescaled, x_vector):
     ### linear response is configuration, x_vector, TDI, pixels
     linear_response = linear_response_angular(
         TDI_idx, single_link, arms_matrix_rescaled, x_vector
@@ -232,16 +232,18 @@ def response_angular(TDI_idx, single_link, arms_matrix_rescaled, x_vector):
 
 
 @jax.jit
-def integrand(
+def quadratic_integrand(
     TDI_idx,
     single_link,
     arms_matrix_rescaled,
     x_vector,
 ):
     ### Defines the integrand using the TDI factors
-    return response_angular(TDI_idx, single_link, arms_matrix_rescaled, x_vector)
+    return quadratic_response_angular(
+        TDI_idx, single_link, arms_matrix_rescaled, x_vector
+    )
 
 
 @jax.jit
-def response_integrated(angular_response):
+def quadratic_response_integrated(angular_response):
     return 4 * jnp.pi * jnp.mean(angular_response, axis=-1)
