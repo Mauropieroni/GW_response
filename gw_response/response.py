@@ -11,7 +11,11 @@ from .single_link import (
     get_single_link_response,
 )
 from .tdi import TDI_map
-from .single_link import linear_response_angular, integrand, response_integrated
+from .single_link import (
+    linear_response_angular,
+    quadratic_integrand,
+    quadratic_response_integrated,
+)
 
 
 @chex.dataclass
@@ -20,9 +24,8 @@ class Response(object):
     det: chex.dataclass = field(default_factory=lambda: LISA())
     single_link_response = {}
     linear_integrand = {}
-    ### TO DO all these should become quadratic integrand/integrated
-    integrand = {}
-    integrated = {}
+    quadratic_integrand = {}
+    quadratic_integrated = {}
 
     def __post_init__(self, **kwargs):
         self.get_positions = lambda times: self.det.satellite_positions(times, **kwargs)
@@ -57,7 +60,7 @@ class Response(object):
         val = {}
 
         for p in ppol.keys():
-            val[2 * p] = get_single_link_response(
+            val[p] = get_single_link_response(
                 ppol[p],
                 arms_matrix,
                 k_vector,
@@ -78,21 +81,20 @@ class Response(object):
         pol = polarization.upper()
         val = {}
 
-        arms_matrix = self.get_arms(times_in_years) / self.det.armlength
+        arms_matrix_rescaled = self.get_arms(times_in_years) / self.det.armlength
         x_array = self.det.x(frequency_array)
 
         for p in pol:
-            ### TO DO this should use only 1 p
-            val[2 * p] = linear_response_angular(
+            val[p] = linear_response_angular(
                 TDI_map[TDI],
-                single_link[2 * p],
-                arms_matrix,
+                single_link[p],
+                arms_matrix_rescaled,
                 x_array,
             )
 
         return val
 
-    def get_integrand(
+    def get_quadratic_integrand(
         self,
         times_in_years,
         single_link,
@@ -107,9 +109,9 @@ class Response(object):
         x_array = self.det.x(frequency_array)
 
         for p in pol:
-            val[2 * p] = integrand(
+            val[2 * p] = quadratic_integrand(
                 TDI_map[TDI],
-                single_link[2 * p],
+                single_link[p],
                 arms_matrix,
                 x_array,
             )
@@ -117,13 +119,17 @@ class Response(object):
         return val
 
     # @partial(jax.jit, static_argnums=(0, 1, 2, 3))
-    def get_integrated(self, TDI="XYZ", polarization="LR", verbose=True):
-        integrated = {}
+    def get_quadratic_integrated(
+        self, quadratic_integrand, TDI="XYZ", polarization="LR", verbose=True
+    ):
+        quadratic_integrated = {}
         for p in polarization:
             ### Computes the integral for the TDI variable
-            integrated[2 * p] = response_integrated(self.integrand[TDI][2 * p])
+            quadratic_integrated[2 * p] = quadratic_response_integrated(
+                quadratic_integrand[TDI][2 * p]
+            )
 
-        return integrated
+        return quadratic_integrated
 
     # @partial(jax.jit, static_argnums=(0, 1, 2, 3, 4))
     def compute_detector(
@@ -152,7 +158,7 @@ class Response(object):
         )
 
         ### Computes the integral for the TDI variable
-        self.integrand[TDI] = self.get_integrand(
+        self.quadratic_integrand[TDI] = self.get_quadratic_integrand(
             times_in_years,
             self.single_link_response,
             frequency_array,
@@ -161,4 +167,6 @@ class Response(object):
         )
 
         ### Computes the integral for the TDI variable
-        self.integrated[TDI] = self.get_integrated(TDI=TDI, polarization=polarization)
+        self.quadratic_integrated[TDI] = self.get_quadratic_integrated(
+            self.quadratic_integrand, TDI=TDI, polarization=polarization
+        )

@@ -24,13 +24,13 @@ class TestResponse(unittest.TestCase):
             frequency_array=freqs,
             polarization="LR",
         )
-        save_arr = np.load(TEST_DATA_PATH + "single_link_response_LL.npy")
+        save_arr = np.load(TEST_DATA_PATH + "single_link_response_L.npy")
         self.assertAlmostEqual(
-            jnp.sum(jnp.abs(single_link_response["LL"] - save_arr)), 0.0
+            jnp.sum(jnp.abs(single_link_response["L"] - save_arr)), 0.0
         )
-        save_arr = np.load(TEST_DATA_PATH + "single_link_response_RR.npy")
+        save_arr = np.load(TEST_DATA_PATH + "single_link_response_R.npy")
         self.assertAlmostEqual(
-            jnp.sum(jnp.abs(single_link_response["RR"] - save_arr)), 0.0
+            jnp.sum(jnp.abs(single_link_response["R"] - save_arr)), 0.0
         )
         linear_integrand = response.get_linear_integrand(
             times_in_years=jnp.array([0.0]),
@@ -39,10 +39,10 @@ class TestResponse(unittest.TestCase):
             TDI="XYZ",
             polarization="LR",
         )
-        save_arr = np.load(TEST_DATA_PATH + "linear_integrand_LL.npy")
-        self.assertAlmostEqual(jnp.sum(jnp.abs(linear_integrand["LL"] - save_arr)), 0.0)
-        save_arr = np.load(TEST_DATA_PATH + "linear_integrand_RR.npy")
-        self.assertAlmostEqual(jnp.sum(jnp.abs(linear_integrand["RR"] - save_arr)), 0.0)
+        save_arr = np.load(TEST_DATA_PATH + "linear_integrand_L.npy")
+        self.assertAlmostEqual(jnp.sum(jnp.abs(linear_integrand["L"] - save_arr)), 0.0)
+        save_arr = np.load(TEST_DATA_PATH + "linear_integrand_R.npy")
+        self.assertAlmostEqual(jnp.sum(jnp.abs(linear_integrand["R"] - save_arr)), 0.0)
         response.compute_detector(
             times_in_years=jnp.array([0.0]),
             theta_array=theta,
@@ -51,13 +51,13 @@ class TestResponse(unittest.TestCase):
             TDI="XYZ",
             polarization="LR",
         )
-        save_arr = np.load(TEST_DATA_PATH + "response_XYZ_LL.npy")
+        save_arr = np.load(TEST_DATA_PATH + "quadratic_response_XYZ_LL.npy")
         self.assertAlmostEqual(
-            jnp.sum(jnp.abs(response.integrated["XYZ"]["LL"] - save_arr)), 0.0
+            jnp.sum(jnp.abs(response.quadratic_integrated["XYZ"]["LL"] - save_arr)), 0.0
         )
-        save_arr = np.load(TEST_DATA_PATH + "response_XYZ_RR.npy")
+        save_arr = np.load(TEST_DATA_PATH + "quadratic_response_XYZ_RR.npy")
         self.assertAlmostEqual(
-            jnp.sum(jnp.abs(response.integrated["XYZ"]["RR"] - save_arr)), 0.0
+            jnp.sum(jnp.abs(response.quadratic_integrated["XYZ"]["RR"] - save_arr)), 0.0
         )
         response.compute_detector(
             times_in_years=jnp.array([0.0]),
@@ -67,13 +67,13 @@ class TestResponse(unittest.TestCase):
             TDI="AET",
             polarization="LR",
         )
-        save_arr = np.load(TEST_DATA_PATH + "response_AET_LL.npy")
+        save_arr = np.load(TEST_DATA_PATH + "quadratic_response_AET_LL.npy")
         self.assertAlmostEqual(
-            jnp.sum(jnp.abs(response.integrated["AET"]["LL"] - save_arr)), 0.0
+            jnp.sum(jnp.abs(response.quadratic_integrated["AET"]["LL"] - save_arr)), 0.0
         )
-        save_arr = np.load(TEST_DATA_PATH + "response_AET_RR.npy")
+        save_arr = np.load(TEST_DATA_PATH + "quadratic_response_AET_RR.npy")
         self.assertAlmostEqual(
-            jnp.sum(jnp.abs(response.integrated["AET"]["RR"] - save_arr)), 0.0
+            jnp.sum(jnp.abs(response.quadratic_integrated["AET"]["RR"] - save_arr)), 0.0
         )
 
 
