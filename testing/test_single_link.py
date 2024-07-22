@@ -4,6 +4,8 @@ import gw_response as gwr
 import os
 import numpy as np
 
+from gw_response.single_link import quadratic_response_integrated
+
 TEST_DATA_PATH = os.path.join(os.path.dirname(__file__), "test_data/")
 
 
@@ -150,7 +152,7 @@ class TestSingleLink(unittest.TestCase):
         )
         save_arr = np.load(TEST_DATA_PATH + "linear_response_tdi.npy")
         self.assertAlmostEqual(jnp.sum(jnp.abs(linear_response_tdi - save_arr)), 0.0)
-        quadratic_angular_response = gwr.response_angular(
+        quadratic_angular_response = gwr.quadratic_response_angular(
             TDI_idx=0,  # XYZ basis
             single_link=single_link_response,
             arms_matrix_rescaled=lisa.detector_arms(0.0) / lisa.armlength,
@@ -160,18 +162,26 @@ class TestSingleLink(unittest.TestCase):
         self.assertAlmostEqual(
             jnp.sum(jnp.abs(quadratic_angular_response - save_arr)), 0.0
         )
-        integrated_response = gwr.response_integrated(quadratic_angular_response)
-        save_arr = np.load(TEST_DATA_PATH + "integrated_response.npy")
-        self.assertAlmostEqual(jnp.sum(jnp.abs(integrated_response - save_arr)), 0.0)
-        quadratic_angular_response_AET = gwr.response_angular(
+        quadratic_response_integrated = gwr.quadratic_response_integrated(
+            quadratic_angular_response
+        )
+        save_arr = np.load(TEST_DATA_PATH + "quadratic_response_integrated.npy")
+        self.assertAlmostEqual(
+            jnp.sum(jnp.abs(quadratic_response_integrated - save_arr)), 0.0
+        )
+        quadratic_angular_response_AET = gwr.quadratic_response_angular(
             TDI_idx=1,  # AET basis
             single_link=single_link_response,
             arms_matrix_rescaled=lisa.detector_arms(0.0) / lisa.armlength,
             x_vector=lisa.x(freqs),
         )
-        integrated_response = gwr.response_integrated(quadratic_angular_response_AET)
-        save_arr = np.load(TEST_DATA_PATH + "integrated_response_AET.npy")
-        self.assertAlmostEqual(jnp.sum(jnp.abs(integrated_response - save_arr)), 0.0)
+        quadratic_response_integrated = gwr.quadratic_response_integrated(
+            quadratic_angular_response_AET
+        )
+        save_arr = np.load(TEST_DATA_PATH + "quadratic_response_integrated_AET.npy")
+        self.assertAlmostEqual(
+            jnp.sum(jnp.abs(quadratic_response_integrated - save_arr)), 0.0
+        )
 
 
 if __name__ == "__main__":

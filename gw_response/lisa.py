@@ -383,7 +383,7 @@ class LISA(Detector):
     """
 
     name: str = "LISA"
-    ps: chex.dataclass = PhysicalConstants()
+    ps: chex.dataclass = PhysicalConstants()  # type: ignore
     fmin: float = 3.0e-5
     fmax: float = 5.0e-1
     armlength: float = 2.5e9
