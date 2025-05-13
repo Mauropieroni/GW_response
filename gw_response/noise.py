@@ -8,7 +8,7 @@ jax.config.update("jax_enable_x64", True)
 import jax.numpy as jnp
 
 from .constants import PhysicalConstants
-from .tdi import tdi_matrix
+from .space_based_tdi import tdi_matrix
 from .utils import arm_length_exponential
 
 
@@ -134,9 +134,7 @@ def single_link_OMS_noise_variance(
     """TO ADD."""
 
     ### The shape will be configurations, arms, arms
-    parameters_matrix = jnp.einsum(
-        "ij,...j->...ij", jnp.identity(6), OMS_parameters**2
-    )
+    parameters_matrix = jnp.einsum("ij,...j->...ij", jnp.identity(6), OMS_parameters**2)
 
     ### The shape will be frequency
     N_int = LISA_interferometric_noise(frequency, inter_param=1.0)

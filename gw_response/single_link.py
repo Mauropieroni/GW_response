@@ -7,7 +7,7 @@ import jax.numpy as jnp
 
 
 from .constants import *
-from .tdi import *
+from .space_based_tdi import *
 
 
 @jax.jit

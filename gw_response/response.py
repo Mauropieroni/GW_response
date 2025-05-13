@@ -10,7 +10,7 @@ from .single_link import (
     polarization_tensors_PC,
     get_single_link_response,
 )
-from .tdi import TDI_map
+from .space_based_tdi import TDI_map
 from .single_link import (
     linear_response_angular,
     quadratic_integrand,
