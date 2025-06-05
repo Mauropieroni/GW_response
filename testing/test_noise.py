@@ -5,6 +5,7 @@ import os
 import numpy as np
 
 TEST_DATA_PATH = os.path.join(os.path.dirname(__file__), "test_data/")
+TEST_DATA_PATH_ligo = os.path.join(os.path.dirname(__file__), "test_data_ligo/")
 
 
 class TestNoise(unittest.TestCase):
@@ -147,6 +148,20 @@ class TestNoise(unittest.TestCase):
             jnp.sum(jnp.abs(noise_matrix - save_arr)),
             0.0,
         )
+
+
+class TestNoise_ligo(unittest.TestCase):
+   def test_noise_ligo(self):
+       freqs = jnp.logspace(1, 5, 1000)
+       ligo_noise = gwr.LIGO_noise(freqs) 
+       save_arr = np.load(TEST_DATA_PATH_ligo + "ligo_psd.npy")
+       self.assertAlmostEqual(
+            jnp.sum(jnp.abs(ligo_noise - save_arr)) / np.max(save_arr),
+            0.0,
+        )
+
+
+
 
 
 if __name__ == "__main__":

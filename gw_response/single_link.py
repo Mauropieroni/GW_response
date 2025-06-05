@@ -162,24 +162,19 @@ def single_link_response(
     all_position = jnp.concatenate(
         (positions, jnp.roll(positions, -1, axis=-1)), axis=-1
     )
-
     ### exp has shape configurations, x_vector, arms, pixels
     position_exp_factor = position_exponential(all_position, wavevector, x_vector)
-
     ### this guy will be configurations, x_vector, arms
     t_retarded_factor = arm_length_exponential(arms_matrix_rescaled, x_vector)
-
     ### this guy will be configurations, arms
     arm_lengths = jnp.sqrt(
         jnp.einsum("...ij,...ij->...j", arms_matrix_rescaled, arms_matrix_rescaled)
     )
-
     ### This will be configurations, x_vector, arms
     prefactor = jnp.einsum("...j,...ij->...ij", arm_lengths, t_retarded_factor)
     ### Need to pre-multiply by x to convert to fractional frequency in single
     ### link response
     prefactor = jnp.einsum("i,...ij->...ij", x_vector, prefactor)
-
     ### This will be configurations, x_vector, arms, pixels
     return jnp.einsum(
         "...ij,...ijk->...ijk", prefactor, position_exp_factor * xi_k_Avec

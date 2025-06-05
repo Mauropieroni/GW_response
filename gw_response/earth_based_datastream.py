@@ -1,14 +1,10 @@
 import jax
-
 jax.config.update("jax_enable_x64", True)
-# jax.checking_leaks = True
 
 import jax.numpy as jnp
-
-from .constants import BasisTransformations
 from .utils import arm_length_exponential
 
-
+@jax.jit
 @jax.jit
 def sin_factors(arms_matrix_rescaled, x_vector):
     ### arms_matrix_rescaled is configurations, vectorial_index, arms
@@ -29,67 +25,56 @@ def sin_factors(arms_matrix_rescaled, x_vector):
     ### the output is configurations, x_vector, arms / 2
     return 2j * jnp.sin(single_arm_mean) * jnp.exp(-1j * single_arm_mean)
 
+import jax
+import jax.numpy as jnp
+from .utils import arm_length_exponential
 
 @jax.jit
 def detector_output(arms_matrix_rescaled, x_vector):
-    # this guy should be some linear algebra transformation with shape (1, 4)
+    """
+    Constructs a Michelson-like response for LIGO:
+    h(f) = h12 + D12 h21 - h23 - D23 h32
 
-    ### this guy will be configurations, x_vector, arms
-    t_retarded_factor = arm_length_exponential(arms_matrix_rescaled, x_vector)
+    Parameters
+    ----------
+    arms_matrix_rescaled : (..., 3, 4)
+        Rescaled arm vectors (unit * length)
+    x_vector : (F,)
+        Frequency array scaled as x = 2π f L / c
 
-    ### this guy will be configurations, x_vector, arms
-    sin_fac = sin_factors(arms_matrix_rescaled, x_vector)
+    Returns
+    -------
+    mix_matrix : (..., F, 1, 4)
+        Mixing matrix to be used with single-link h̃(f)
+    """
 
-    ### With this roll 12, 23, 31 --> 31, 12, 23
-    permuted_sin_fac = jnp.roll(sin_fac, 1, axis=-1)
+    # Compute frequency-domain delay operator: exp(-i x)
+    delays = arm_length_exponential(arms_matrix_rescaled, x_vector)  # (..., F, 4)
 
-    ### This would be a diag matrix on the last 2 indexes,
-    ### the shape is configurations, x_vector, TDI, arms (now 3 not 6!!)
-    t_retarded_coeffs = jnp.einsum(
-        "ij,...kj->...kij", jnp.identity(3), t_retarded_factor[..., :3]
-    )
+    # Shape: (..., F, 1, 4)
+    mix_matrix = jnp.zeros((*delays.shape[:-1], 1, 4), dtype=jnp.complex128)
 
-    ### This would be a diag matrix on the last 2 indexes,
-    ### the shape is configurations, x_vector, TDI, arms (now 3 not 6!!)
-    flipped_t_retarded_coeffs = jnp.einsum(
-        "ij,...kj->...kij", jnp.identity(3), t_retarded_factor[..., 3:]
-    )
+    # Assign coefficients:
+    # link 0 ≡ h12       → coefficient +1
+    # link 1 ≡ h23       → coefficient -1
+    # link 2 ≡ h21       → coefficient +D12
+    # link 3 ≡ h32       → coefficient -D23
 
-    ### This takes ij + retarded (using ij) ji
-    ### this guy will be configurations, x_vector, TDI, arms (back to 6!)
-    ones = jnp.ones_like(t_retarded_coeffs)
-    identity = jnp.einsum("ij,...lij->...lij", jnp.identity(3), ones)
+    mix_matrix = mix_matrix.at[..., 0, 0].set(1.0 + 0j)                       # h12
+    mix_matrix = mix_matrix.at[..., 0, 1].set(-1.0 + 0j)                      # h23
+    mix_matrix = mix_matrix.at[..., 0, 2].set(delays[..., 2])                # D12 h21
+    mix_matrix = mix_matrix.at[..., 0, 3].set(-delays[..., 3])               # -D23 h32
 
-    ### To test if the next 2 things are equal !!!!
-    # rolled_identity1 = jnp.einsum(
-    #    "ij,...lij->...lij", jnp.roll(jnp.identity(3), 1, axis=-2), ones
-    # )
-    rolled_identity = jnp.roll(identity, 1, axis=-2)
-
-    single_arm = jnp.concatenate((identity, t_retarded_coeffs), axis=-1)
-
-    ### This takes ji + retarded (using ji) ij
-    ### this guy will be configurations, x_vector, TDI, arms (back to 6!)
-    flipped_single_arm = jnp.concatenate(
-        (jnp.roll(flipped_t_retarded_coeffs, 1, axis=-2), rolled_identity),
-        axis=-1,
-    )
-
-    ### These two guys are configurations, x_vector, TDI, arms (back to 6!)
-    retarded_arm1 = jnp.einsum("...ik,...ijk->...ijk", permuted_sin_fac, single_arm)
-
-    retarded_arm2 = jnp.einsum("...ik,...ijk->...ijk", sin_fac, flipped_single_arm)
-
-    # the output has shape configurations, x_vector, TDI_indexes, arms
-    return retarded_arm1 - retarded_arm2
+    return mix_matrix
 
 
 @jax.jit
-def build_datastream(TDI_idx, single_link, arms_matrix_rescaled, x_vector):
-    ### tdi_mat has shape configuration, x_vector, TDI, arms
-    tdi_mat = detector_output(TDI_idx, arms_matrix_rescaled, x_vector)
+def build_datastream(detector_mat, single_link):
+    """
+    Apply the Michelson detector matrix to per-link data.
 
-    ### single_link has shape configuration, x_vector, arms, pixels
-
-    ### linear response is configuration, x_vector, TDI, pixels
-    return jnp.einsum("...ijk,...ikl->...ijl", tdi_mat, single_link)
+    detector_mat: (..., F, 1, 4)   from detector_output()
+    single_link:  (..., F, 4, P)   per-link response (e.g. time samples)
+    returns:      (..., F, 1, P)
+    """
+    return jnp.einsum("...ijk,...ikl->...ijl", detector_mat, single_link)

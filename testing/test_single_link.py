@@ -7,7 +7,7 @@ import numpy as np
 from gw_response.single_link import quadratic_response_integrated
 
 TEST_DATA_PATH = os.path.join(os.path.dirname(__file__), "test_data/")
-
+TEST_DATA_PATH_ligo = os.path.join(os.path.dirname(__file__), "test_data_ligo/")
 
 class TestSingleLink(unittest.TestCase):
     def test_unit_vector(self):
@@ -47,7 +47,6 @@ class TestSingleLink(unittest.TestCase):
         unit_vector = gwr.unit_vec(theta, phi)
         lisa = gwr.LISA()
         freqs = jnp.logspace(-5, 0, 300)
-        time_in_years = jnp.linspace(0, 1.0, 100)
         xi_k = gwr.xi_k_no_G(
             unit_wavevector=unit_vector,
             x_vector=lisa.x(freqs),
@@ -55,6 +54,7 @@ class TestSingleLink(unittest.TestCase):
         )
         save_arr = np.load(TEST_DATA_PATH + "xi_k.npy")
         self.assertAlmostEqual(jnp.sum(jnp.abs(xi_k - save_arr)), 0.0)
+        
 
     def test_position_exp(self):
         lisa = gwr.LISA()
@@ -82,7 +82,6 @@ class TestSingleLink(unittest.TestCase):
 
     def test_geometrical_factor(self):
         lisa = gwr.LISA()
-        time_in_years = jnp.linspace(0, 1.0, 100)
         pixel = gwr.Pixel()
         theta, phi = pixel.theta_pixel, pixel.phi_pixel
         u, v = gwr.uv_analytical(theta, phi)
@@ -97,7 +96,6 @@ class TestSingleLink(unittest.TestCase):
     def test_xi_k_Avec(self):
         lisa = gwr.LISA()
         freqs = jnp.logspace(-5, 0, 300)
-        time_in_years = jnp.linspace(0, 1.0, 100)
         pixel = gwr.Pixel()
         theta, phi = pixel.theta_pixel, pixel.phi_pixel
         unit_vector = gwr.unit_vec(theta, phi)
@@ -119,7 +117,6 @@ class TestSingleLink(unittest.TestCase):
     def test_single_link_response(self):
         lisa = gwr.LISA()
         freqs = jnp.logspace(-5, 0, 300)
-        time_in_years = jnp.linspace(0, 1.0, 100)
         pixel = gwr.Pixel()
         theta, phi = pixel.theta_pixel, pixel.phi_pixel
         unit_vector = gwr.unit_vec(theta, phi)
@@ -184,5 +181,141 @@ class TestSingleLink(unittest.TestCase):
         )
 
 
+
+class TestSingleLink_ligo(unittest.TestCase):
+    def test_unit_vector(self):
+        pixel = gwr.Pixel()
+        theta, phi = pixel.theta_pixel, pixel.phi_pixel
+        unit_vector = gwr.unit_vec(theta, phi)
+        save_arr = np.load(TEST_DATA_PATH_ligo + "unit_vector.npy")
+        self.assertAlmostEqual(jnp.sum(jnp.abs(unit_vector - save_arr)), 0.0)
+
+    def test_uv(self):
+        pixel = gwr.Pixel()
+        theta, phi = pixel.theta_pixel, pixel.phi_pixel
+        u, v = gwr.uv_analytical(theta, phi)
+        save_arr = np.load(TEST_DATA_PATH_ligo + "u.npy")
+        self.assertAlmostEqual(jnp.sum(jnp.abs(u - save_arr)), 0.0)
+        save_arr = np.load(TEST_DATA_PATH_ligo + "v.npy")
+        self.assertAlmostEqual(jnp.sum(jnp.abs(v - save_arr)), 0.0)
+        e1, e2 = gwr.polarization_vectors(u, v)
+        save_arr = np.load(TEST_DATA_PATH_ligo + "e1.npy")
+        self.assertAlmostEqual(jnp.sum(jnp.abs(e1 - save_arr)), 0.0)
+        save_arr = np.load(TEST_DATA_PATH_ligo + "e2.npy")
+        self.assertAlmostEqual(jnp.sum(jnp.abs(e2 - save_arr)), 0.0)
+        e1p, e1c = gwr.polarization_tensors_PC(u, v)
+        e1L, e1R = gwr.polarization_tensors_LR(u, v)
+        save_arr = np.load(TEST_DATA_PATH_ligo + "e1p.npy")
+        self.assertAlmostEqual(jnp.sum(jnp.abs(e1p - save_arr)), 0.0)
+        save_arr = np.load(TEST_DATA_PATH_ligo + "e1c.npy")
+        self.assertAlmostEqual(jnp.sum(jnp.abs(e1c - save_arr)), 0.0)
+        save_arr = np.load(TEST_DATA_PATH_ligo + "e1L.npy")
+        self.assertAlmostEqual(jnp.sum(jnp.abs(e1L - save_arr)), 0.0)
+        save_arr = np.load(TEST_DATA_PATH_ligo + "e1R.npy")
+        self.assertAlmostEqual(jnp.sum(jnp.abs(e1R - save_arr)), 0.0)
+
+    def test_xi_k(self):
+        pixel = gwr.Pixel()
+        theta, phi = pixel.theta_pixel, pixel.phi_pixel
+        unit_vector = gwr.unit_vec(theta, phi)
+        ligo = gwr.LIGO()
+        freqs = jnp.logspace(1, 5, 1000)
+        xi_k = gwr.xi_k_no_G(
+            unit_wavevector=unit_vector,
+            x_vector=ligo.x(freqs),
+            arms_mat_rescaled=ligo.detector_arms(0.0) / ligo.armlength,
+        )
+        save_arr = np.load(TEST_DATA_PATH_ligo + "xi_k.npy")
+        self.assertAlmostEqual(jnp.sum(jnp.abs(xi_k - save_arr)), 0.0)
+        
+
+    def test_position_exp(self):
+        ligo = gwr.LIGO()
+        freqs = jnp.logspace(1, 5, 1000)
+        pixel = gwr.Pixel()
+        #print(pixel)
+        theta, phi = pixel.theta_pixel, pixel.phi_pixel
+        unit_vector = gwr.unit_vec(theta, phi)
+        #print(unit_vector)
+        sat_positions = ligo.satellite_positions(0.0)[0]
+        #print(sat_positions)
+        p1, p2, p3 = sat_positions[:, 0], sat_positions[:, 1], sat_positions[:, 2]
+        sp1, sp2, sp3 = gwr.shift_to_center(p1, p2, p3)
+        #print(sp1, sp2, sp3)
+        
+        position_exp = gwr.position_exponential(
+            positions_detector_frame=jnp.array([[sp1, sp2, sp3]]) / ligo.armlength,
+            unit_wavevector=unit_vector,
+            x_vector=ligo.x(freqs),
+        )
+        
+        save_arr = np.load(TEST_DATA_PATH_ligo + "position_exp.npy")
+        self.assertAlmostEqual(
+            jnp.sum(jnp.abs(position_exp - save_arr)),
+            0.0)
+
+    def test_geometrical_factor(self):
+        ligo = gwr.LIGO()
+        pixel = gwr.Pixel()
+        theta, phi = pixel.theta_pixel, pixel.phi_pixel
+        u, v = gwr.uv_analytical(theta, phi)
+        e1L, _ = gwr.polarization_tensors_LR(u, v)
+        geomtrical_factor = gwr.geometrical_factor(
+            arms_matrix=ligo.detector_arms(0.0) / ligo.armlength,
+            polarization_tensor=e1L,
+        )
+        save_arr = np.load(TEST_DATA_PATH_ligo + "geometrical_factor.npy")
+        self.assertAlmostEqual(jnp.sum(jnp.abs(geomtrical_factor - save_arr)), 0.0)
+
+    def test_xi_k_Avec(self):
+        ligo = gwr.LIGO()
+        freqs = jnp.logspace(1, 5, 1000)
+        pixel = gwr.Pixel()
+        theta, phi = pixel.theta_pixel, pixel.phi_pixel
+        unit_vector = gwr.unit_vec(theta, phi)
+        u, v = gwr.uv_analytical(theta, phi)
+        e1L, _ = gwr.polarization_tensors_LR(u, v)
+        geomtrical_factor = gwr.geometrical_factor(
+            arms_matrix=ligo.detector_arms(0.0) / ligo.armlength,
+            polarization_tensor=e1L,
+        )
+        xi_k_Avec = gwr.xi_k_Avec_func(
+            arms_matrix_rescaled=ligo.detector_arms(0.0) / ligo.armlength,
+            unit_wavevector=unit_vector,
+            x_vector=ligo.x(freqs),
+            geometrical=geomtrical_factor,
+        )
+        save_arr = np.load(TEST_DATA_PATH_ligo + "xi_k_Avec.npy")
+        self.assertAlmostEqual(jnp.sum(jnp.abs(xi_k_Avec - save_arr)), 0.0)
+
+    def test_single_link_response(self):
+        ligo = gwr.LIGO()
+        freqs = jnp.logspace(1, 5, 1000)
+        pixel = gwr.Pixel()
+        theta, phi = pixel.theta_pixel, pixel.phi_pixel
+        unit_vector = gwr.unit_vec(theta, phi)
+        u, v = gwr.uv_analytical(theta, phi)
+        e1L, _ = gwr.polarization_tensors_LR(u, v)
+        geomtrical_factor = gwr.geometrical_factor(
+            arms_matrix=ligo.detector_arms(0.0) / ligo.armlength,
+            polarization_tensor=e1L,
+        )
+        xi_k_Avec = gwr.xi_k_Avec_func(
+            arms_matrix_rescaled=ligo.detector_arms(0.0) / ligo.armlength,
+            unit_wavevector=unit_vector,
+            x_vector=ligo.x(freqs),
+            geometrical=geomtrical_factor,
+        )
+        single_link_response = gwr.single_link_response(
+            positions=ligo.satellite_positions(0.0) / ligo.armlength,
+            arms_matrix_rescaled=ligo.detector_arms(0.0) / ligo.armlength,
+            wavevector=unit_vector,
+            x_vector=ligo.x(freqs),
+            xi_k_Avec=xi_k_Avec,
+        )
+        save_arr = np.load(TEST_DATA_PATH_ligo + "single_link_response.npy")
+        self.assertAlmostEqual(jnp.sum(jnp.abs(single_link_response - save_arr)), 0.0)
+        
+        
 if __name__ == "__main__":
     unittest.main(verbosity=2)

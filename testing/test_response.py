@@ -5,9 +5,10 @@ import os
 import numpy as np
 
 TEST_DATA_PATH = os.path.join(os.path.dirname(__file__), "test_data/")
+TEST_DATA_PATH_ligo = os.path.join(os.path.dirname(__file__), "test_data_ligo/")
 
 
-class TestResponse(unittest.TestCase):
+class TestResponse_LISA(unittest.TestCase):
     def test_response(self):
         response = gwr.Response(
             ps=gwr.PhysicalConstants(),
@@ -75,6 +76,43 @@ class TestResponse(unittest.TestCase):
         self.assertAlmostEqual(
             jnp.sum(jnp.abs(response.quadratic_integrated["AET"]["RR"] - save_arr)), 0.0
         )
+
+
+class TestResponse_LIGO(unittest.TestCase):
+    def test_response(self):
+        response = gwr.ResponseLIGO(ps=gwr.PhysicalConstants(), det=gwr.LIGO())
+        pixel = gwr.Pixel()
+        freqs = jnp.logspace(1, 5, 1000)
+
+        theta, phi = pixel.theta_pixel, pixel.phi_pixel
+        
+        single_link_response = response.get_single_link_response(
+            times_in_years=jnp.array([0.0]),
+            theta_array=theta,
+            phi_array=phi,
+            frequency_array=freqs,
+            polarization="LR",
+        )
+        save_arr = np.load(TEST_DATA_PATH_ligo + "single_link_response_L.npy")
+        self.assertAlmostEqual(
+            jnp.sum(jnp.abs(single_link_response["L"] - save_arr)), 0.0
+        )
+        save_arr = np.load(TEST_DATA_PATH_ligo + "single_link_response_R.npy")
+        self.assertAlmostEqual(
+            jnp.sum(jnp.abs(single_link_response["R"] - save_arr)), 0.0
+        )
+        
+        linear_integrand = response.get_linear_integrand(
+            times_in_years=jnp.array([0.0]),
+            single_link=single_link_response,
+            frequency_array=freqs,
+            polarization="LR",
+        )
+        
+        save_arr = np.load(TEST_DATA_PATH_ligo + "linear_integrand_L.npy")
+        self.assertAlmostEqual(jnp.sum(jnp.abs(linear_integrand["L"] - save_arr)), 0.0)
+        save_arr = np.load(TEST_DATA_PATH_ligo + "linear_integrand_R.npy")
+        self.assertAlmostEqual(jnp.sum(jnp.abs(linear_integrand["R"] - save_arr)), 0.0)
 
 
 if __name__ == "__main__":

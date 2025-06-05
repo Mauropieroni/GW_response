@@ -10,6 +10,18 @@ import jax.numpy as jnp
 from .constants import PhysicalConstants
 from .space_based_tdi import tdi_matrix
 from .utils import arm_length_exponential
+import pickle
+from scipy.interpolate import interp1d
+
+# load once at module import
+with open("/home/zaldivar/Documents/Androniki/phd/LIGO/GW_response/LIGO.pkl", "rb") as f:
+    _ligo_psd_data = pickle.load(f)
+_ligo_freqs = _ligo_psd_data["Frequency"]
+_ligo_psd   = _ligo_psd_data["Mid high/Late low"]
+_ligo_interp = interp1d(
+    _ligo_freqs, _ligo_psd,
+    kind="linear", bounds_error=False, fill_value="extrapolate"
+)
 
 
 @jax.jit
@@ -55,6 +67,11 @@ def LISA_interferometric_noise(frequency, inter_param=15.0):
 
     return inter_param**2 * 1e-24 * first * second
 
+def LIGO_noise(frequencies):
+    """
+    Plain-Python interpolator: returns PSD at `frequencies`.
+    """
+    return jnp.array(_ligo_interp(frequencies))
 
 @jax.jit
 def single_link_TM_acceleration_noise_variance(
@@ -141,6 +158,14 @@ def single_link_OMS_noise_variance(
 
     ### The shape will be configurations, frequency, arms, arms
     return jnp.einsum("...ij,k->...kij", parameters_matrix, N_int)
+
+
+def single_link_LIGO_noise_variance(frequencies):
+    """
+    Returns the 1D Michelson‐output PSD S_n(f) for LIGO.
+    Shape: (F,)
+    """
+    return LIGO_noise(frequencies)
 
 
 @jax.jit

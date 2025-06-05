@@ -5,6 +5,7 @@ import os
 import numpy as np
 
 TEST_DATA_PATH = os.path.join(os.path.dirname(__file__), "test_data/")
+TEST_DATA_PATH_ligo = os.path.join(os.path.dirname(__file__), "test_data_ligo/")
 
 
 class TestUtils(unittest.TestCase):
@@ -36,6 +37,17 @@ class TestUtils(unittest.TestCase):
             x_vector=lisa.x(freqs),
         )
         save_arr = np.load(TEST_DATA_PATH + "arm_length_exp.npy")
+        self.assertAlmostEqual(jnp.sum(jnp.abs(arm_length_exp - save_arr)), 0.0)
+
+
+    def test_arm_length_exp(self):
+        ligo = gwr.LIGO()
+        freqs = jnp.logspace(1, 5, 1000)
+        arm_length_exp = gwr.arm_length_exponential(
+            arms_matrix_rescaled=ligo.detector_arms(0.0) / ligo.armlength,
+            x_vector=ligo.x(freqs),
+        )
+        save_arr = np.load(TEST_DATA_PATH_ligo + "arm_length_exp.npy")
         self.assertAlmostEqual(jnp.sum(jnp.abs(arm_length_exp - save_arr)), 0.0)
 
 
