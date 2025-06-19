@@ -37,7 +37,7 @@ class ResponseLIGO:
         polarization="LR",
     ):
         pol = polarization.upper()
-        k_vec = unit_vec(theta_array, phi_array)
+        k_vector = unit_vec(theta_array, phi_array)
         u, v = uv_analytical(theta_array, phi_array)
 
         positions = self.get_positions(times_in_years) / self.det.armlength
@@ -49,14 +49,22 @@ class ResponseLIGO:
         elif pol == "LR":
             p1, p2 = polarization_tensors_LR(u, v)
         else:
-            raise ValueError("Unknown polarization type")
+            raise ValueError("Incorrect polarization type")
 
-        out = {}
-        for label, tensor in zip(("L", "R"), (p1, p2)):
-            out[label] = get_single_link_response(
-                tensor, arms_matrix, k_vec, x_array, positions
+
+        ppol = {pol[0]: p1, pol[1]: p2}
+        val = {}
+
+        for p in ppol.keys():
+            val[p] = get_single_link_response(
+                ppol[p],
+                arms_matrix,
+                k_vector,
+                x_array,
+                positions,
             )
-        return out  # {'L': (..., F, 4, P), 'R': (...)}
+
+        return val
 
     def get_linear_integrand(
         self,
@@ -106,7 +114,6 @@ class ResponseLIGO:
         theta_array,
         phi_array,
         frequency_array,
-        TDI="XYZ",  # ignored
         polarization="LR",
     ):
         self.single_link_response = self.get_single_link_response(
