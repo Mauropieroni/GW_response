@@ -106,6 +106,11 @@ def main():
         metavar="N",
         help="Number of frequencies for stress test (default: 200)",
     )
+    parser.add_argument(
+        "--plot",
+        action="store_true",
+        help="Save a verification plot of the response function",
+    )
 
     args = parser.parse_args()
 
@@ -163,7 +168,7 @@ def main():
     # Run parallel stress test if requested
     if args.stress is not None:
         print("Running parallel stress test...")
-        suite.run_parallel_stress_test(nside=args.stress, n_freq=args.stress_freq)
+        suite.run_parallel_stress_test(nside=args.stress, n_freq=args.stress_freq, plot=args.plot)
         # Recreate report with stress results included
         from gw_response.benchmark import BenchmarkReport
         report = BenchmarkReport(

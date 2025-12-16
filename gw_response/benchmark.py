@@ -569,7 +569,7 @@ class BenchmarkSuite:
         return results
 
     def run_parallel_stress_test(
-        self, nside: int = 128, n_freq: int = 200
+        self, nside: int = 128, n_freq: int = 200, plot: bool = False
     ) -> List[TimingResult]:
         """Run a single large parallel-only benchmark.
 
@@ -579,6 +579,7 @@ class BenchmarkSuite:
         Args:
             nside: HEALPix NSIDE parameter (pixels = 12 * nside^2)
             n_freq: Number of frequency points
+            plot: If True, save a verification plot of the response
         """
         from . import compute_response
 
@@ -599,7 +600,40 @@ class BenchmarkSuite:
 
         print(f"    Execution: {result.execution_time_ms:.2f} ms")
 
+        if plot:
+            self._save_verification_plot(freqs, nside, parallel=True)
+
         return results
+
+    def _save_verification_plot(
+        self, freqs: jnp.ndarray, nside: int, parallel: bool = False
+    ):
+        """Save a verification plot of the response function."""
+        import matplotlib.pyplot as plt
+        from . import compute_response
+
+        print("  Generating verification plot...")
+
+        # Compute response (use cached result if available)
+        response = compute_response(freqs, nside=nside, tdi="AET", parallel=parallel)
+
+        fig, ax = plt.subplots(figsize=(10, 6))
+
+        # Plot diagonal elements (AA, EE, TT)
+        ax.loglog(np.array(freqs), np.array(response.AA[0, :]), label="AA", lw=2)
+        ax.loglog(np.array(freqs), np.array(response.EE[0, :]), label="EE", lw=2)
+        ax.loglog(np.array(freqs), np.array(response.TT[0, :]), label="TT", lw=2)
+
+        ax.set_xlabel("Frequency [Hz]")
+        ax.set_ylabel("Response")
+        ax.set_title(f"LISA Response (AET TDI, nside={nside}, {12*nside**2:,} pixels)")
+        ax.legend()
+        ax.grid(True, alpha=0.3)
+
+        plot_path = "benchmark_verification_plot.png"
+        fig.savefig(plot_path, dpi=150, bbox_inches="tight")
+        plt.close(fig)
+        print(f"    Saved: {plot_path}")
 
     def run_all(self, include_heavy: bool = False, include_parallel: bool = False) -> BenchmarkReport:
         """Run complete benchmark suite.
