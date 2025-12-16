@@ -410,9 +410,9 @@ class BenchmarkSuite:
         return results
 
     def run_heavy_benchmarks(self) -> List[TimingResult]:
-        """Heavy-duty benchmarks for GPU stress testing.
+        """Heavier benchmarks for GPU testing.
 
-        These are designed to fully utilize multi-GPU systems like 2x A100.
+        These use larger problem sizes than the standard benchmarks.
         """
         from . import (
             LISA,
@@ -431,12 +431,12 @@ class BenchmarkSuite:
 
         # Heavy single_link configurations
         heavy_single_link_configs = [
-            {"nside": 32, "n_freq": 200, "n_times": 1, "label": "large_pixels"},
-            {"nside": 16, "n_freq": 500, "n_times": 1, "label": "large_freq"},
-            {"nside": 32, "n_freq": 500, "n_times": 1, "label": "large_both"},
-            {"nside": 16, "n_freq": 200, "n_times": 50, "label": "many_times"},
-            {"nside": 32, "n_freq": 200, "n_times": 20, "label": "heavy_combo"},
-            {"nside": 64, "n_freq": 100, "n_times": 1, "label": "huge_pixels"},
+            {"nside": 24, "n_freq": 150, "n_times": 1, "label": "large_pixels"},
+            {"nside": 16, "n_freq": 300, "n_times": 1, "label": "large_freq"},
+            {"nside": 24, "n_freq": 300, "n_times": 1, "label": "large_both"},
+            {"nside": 16, "n_freq": 150, "n_times": 20, "label": "many_times"},
+            {"nside": 24, "n_freq": 150, "n_times": 10, "label": "heavy_combo"},
+            {"nside": 32, "n_freq": 100, "n_times": 1, "label": "huge_pixels"},
         ]
 
         for cfg in heavy_single_link_configs:
@@ -471,11 +471,11 @@ class BenchmarkSuite:
 
         # Heavy full pipeline configurations
         heavy_pipeline_configs = [
-            {"n_freq": 500, "nside": 16, "label": "large_freq"},
-            {"n_freq": 200, "nside": 32, "label": "large_pixels"},
-            {"n_freq": 500, "nside": 32, "label": "large_both"},
-            {"n_freq": 1000, "nside": 16, "label": "huge_freq"},
-            {"n_freq": 200, "nside": 64, "label": "huge_pixels"},
+            {"n_freq": 300, "nside": 16, "label": "large_freq"},
+            {"n_freq": 150, "nside": 24, "label": "large_pixels"},
+            {"n_freq": 300, "nside": 24, "label": "large_both"},
+            {"n_freq": 500, "nside": 16, "label": "huge_freq"},
+            {"n_freq": 150, "nside": 32, "label": "huge_pixels"},
         ]
 
         for cfg in heavy_pipeline_configs:
@@ -505,10 +505,10 @@ class BenchmarkSuite:
 
         # Configurations that benefit from parallelization
         parallel_configs = [
-            {"n_freq": 200, "nside": 16, "label": "medium"},
-            {"n_freq": 500, "nside": 16, "label": "large_freq"},
-            {"n_freq": 200, "nside": 32, "label": "large_pixels"},
-            {"n_freq": 500, "nside": 32, "label": "large_both"},
+            {"n_freq": 150, "nside": 16, "label": "medium"},
+            {"n_freq": 300, "nside": 16, "label": "large_freq"},
+            {"n_freq": 150, "nside": 24, "label": "large_pixels"},
+            {"n_freq": 300, "nside": 24, "label": "large_both"},
         ]
 
         for cfg in parallel_configs:
