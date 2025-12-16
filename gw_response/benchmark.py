@@ -568,6 +568,39 @@ class BenchmarkSuite:
 
         return results
 
+    def run_parallel_stress_test(
+        self, nside: int = 128, n_freq: int = 200
+    ) -> List[TimingResult]:
+        """Run a single large parallel-only benchmark.
+
+        This is designed for problem sizes that exceed single-GPU memory
+        and require multi-GPU distribution.
+
+        Args:
+            nside: HEALPix NSIDE parameter (pixels = 12 * nside^2)
+            n_freq: Number of frequency points
+        """
+        from . import compute_response
+
+        results = []
+        n_devices = len(jax.devices())
+        n_pixels = 12 * nside**2
+
+        print(f"  Running parallel stress test ({n_devices} devices)...")
+        print(f"    nside={nside}: {n_pixels:,} pixels, {n_freq} freqs")
+
+        freqs = jnp.logspace(-4, -1, n_freq)
+
+        name = f"parallel_stress_nside{nside}"
+        result = self.benchmark.time_function(
+            compute_response, freqs, nside=nside, parallel=True, name=name
+        )
+        results.append(result)
+
+        print(f"    Execution: {result.execution_time_ms:.2f} ms")
+
+        return results
+
     def run_all(self, include_heavy: bool = False, include_parallel: bool = False) -> BenchmarkReport:
         """Run complete benchmark suite.
 

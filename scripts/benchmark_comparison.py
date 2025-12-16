@@ -15,6 +15,11 @@ Usage:
     # Run everything (standard + heavy + parallel)
     python benchmark_comparison.py --full
 
+    # Run parallel stress test (large problem size, multi-GPU only)
+    python benchmark_comparison.py --stress          # default nside=128 (~196k pixels)
+    python benchmark_comparison.py --stress 256      # custom nside (~786k pixels)
+    python benchmark_comparison.py --stress 128 --stress-freq 500
+
     # Run with specific settings
     python benchmark_comparison.py --warmup 5 --iterations 20
 
@@ -86,6 +91,21 @@ def main():
         action="store_true",
         help="Run scaling benchmark (varies problem size)",
     )
+    parser.add_argument(
+        "--stress",
+        type=int,
+        nargs="?",
+        const=128,
+        metavar="NSIDE",
+        help="Run parallel stress test with large NSIDE (default: 128, ~196k pixels)",
+    )
+    parser.add_argument(
+        "--stress-freq",
+        type=int,
+        default=200,
+        metavar="N",
+        help="Number of frequencies for stress test (default: 200)",
+    )
 
     args = parser.parse_args()
 
@@ -134,6 +154,18 @@ def main():
         # Recreate report with scaling results included
         from gw_response.benchmark import BenchmarkReport
         from datetime import datetime
+        report = BenchmarkReport(
+            results=suite.benchmark.results,
+            system_info=suite._get_system_info(),
+            timestamp=datetime.now().isoformat(),
+        )
+
+    # Run parallel stress test if requested
+    if args.stress is not None:
+        print("Running parallel stress test...")
+        suite.run_parallel_stress_test(nside=args.stress, n_freq=args.stress_freq)
+        # Recreate report with stress results included
+        from gw_response.benchmark import BenchmarkReport
         report = BenchmarkReport(
             results=suite.benchmark.results,
             system_info=suite._get_system_info(),

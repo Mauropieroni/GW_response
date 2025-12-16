@@ -1,0 +1,806 @@
+{
+  "results": [
+    {
+      "name": "single_link_small",
+      "wall_time_ms": 47.287399942676224,
+      "compile_time_ms": 38.517541640127696,
+      "execution_time_ms": 8.769858302548528,
+      "n_iterations": 10,
+      "input_shapes": {
+        "arg_0": [
+          768,
+          3,
+          3
+        ],
+        "arg_1": [
+          1,
+          3,
+          6
+        ],
+        "arg_2": [
+          3,
+          768
+        ],
+        "arg_3": [
+          100
+        ],
+        "arg_4": [
+          1,
+          3,
+          3
+        ]
+      },
+      "output_shape": [
+        1,
+        100,
+        6,
+        768
+      ],
+      "device_type": "cpu",
+      "n_devices": 1,
+      "estimated_flops": 10149600,
+      "memory_bytes": 7372800,
+      "throughput_elements_per_sec": 52543608.357513726
+    },
+    {
+      "name": "single_link_medium_freq",
+      "wall_time_ms": 72.40283749221513,
+      "compile_time_ms": 48.82937499011556,
+      "execution_time_ms": 23.573462502099574,
+      "n_iterations": 10,
+      "input_shapes": {
+        "arg_0": [
+          768,
+          3,
+          3
+        ],
+        "arg_1": [
+          1,
+          3,
+          6
+        ],
+        "arg_2": [
+          3,
+          768
+        ],
+        "arg_3": [
+          300
+        ],
+        "arg_4": [
+          1,
+          3,
+          3
+        ]
+      },
+      "output_shape": [
+        1,
+        300,
+        6,
+        768
+      ],
+      "device_type": "cpu",
+      "n_devices": 1,
+      "estimated_flops": 10149600,
+      "memory_bytes": 22118400,
+      "throughput_elements_per_sec": 58642212.60991576
+    },
+    {
+      "name": "single_link_medium_pixels",
+      "wall_time_ms": 137.71965944130596,
+      "compile_time_ms": 98.2688053433473,
+      "execution_time_ms": 39.450854097958654,
+      "n_iterations": 10,
+      "input_shapes": {
+        "arg_0": [
+          3072,
+          3,
+          3
+        ],
+        "arg_1": [
+          1,
+          3,
+          6
+        ],
+        "arg_2": [
+          3,
+          3072
+        ],
+        "arg_3": [
+          100
+        ],
+        "arg_4": [
+          1,
+          3,
+          3
+        ]
+      },
+      "output_shape": [
+        1,
+        100,
+        6,
+        3072
+      ],
+      "device_type": "cpu",
+      "n_devices": 1,
+      "estimated_flops": 10149600,
+      "memory_bytes": 29491200,
+      "throughput_elements_per_sec": 46721421.93482636
+    },
+    {
+      "name": "single_link_multi_time",
+      "wall_time_ms": 310.46058631812537,
+      "compile_time_ms": 168.18565300976238,
+      "execution_time_ms": 142.27493330836296,
+      "n_iterations": 10,
+      "input_shapes": {
+        "arg_0": [
+          768,
+          3,
+          3
+        ],
+        "arg_1": [
+          10,
+          3,
+          6
+        ],
+        "arg_2": [
+          3,
+          768
+        ],
+        "arg_3": [
+          100
+        ],
+        "arg_4": [
+          10,
+          3,
+          3
+        ]
+      },
+      "output_shape": [
+        10,
+        100,
+        6,
+        768
+      ],
+      "device_type": "cpu",
+      "n_devices": 1,
+      "estimated_flops": 10149600,
+      "memory_bytes": 73728000,
+      "throughput_elements_per_sec": 32387996.204593126
+    },
+    {
+      "name": "compute_response_small",
+      "wall_time_ms": 143.31490559658658,
+      "compile_time_ms": 113.64759729864697,
+      "execution_time_ms": 29.6673082979396,
+      "n_iterations": 10,
+      "input_shapes": {
+        "arg_0": [
+          100
+        ]
+      },
+      "output_shape": [
+        1,
+        100,
+        3,
+        3
+      ],
+      "device_type": "cpu",
+      "n_devices": 1,
+      "estimated_flops": 28593600,
+      "memory_bytes": 14400,
+      "throughput_elements_per_sec": 30336.422534918853
+    },
+    {
+      "name": "compute_response_medium_freq",
+      "wall_time_ms": 241.49441964691505,
+      "compile_time_ms": 149.66423634905368,
+      "execution_time_ms": 91.83018329786137,
+      "n_iterations": 10,
+      "input_shapes": {
+        "arg_0": [
+          300
+        ]
+      },
+      "output_shape": [
+        1,
+        300,
+        3,
+        3
+      ],
+      "device_type": "cpu",
+      "n_devices": 1,
+      "estimated_flops": 28593600,
+      "memory_bytes": 43200,
+      "throughput_elements_per_sec": 29402.097469872744
+    },
+    {
+      "name": "compute_response_medium_pixels",
+      "wall_time_ms": 268.9949583339816,
+      "compile_time_ms": 153.2449583367755,
+      "execution_time_ms": 115.74999999720603,
+      "n_iterations": 10,
+      "input_shapes": {
+        "arg_0": [
+          100
+        ]
+      },
+      "output_shape": [
+        1,
+        100,
+        3,
+        3
+      ],
+      "device_type": "cpu",
+      "n_devices": 1,
+      "estimated_flops": 28593600,
+      "memory_bytes": 14400,
+      "throughput_elements_per_sec": 7775.377969950101
+    },
+    {
+      "name": "single_link_heavy_large_pixels",
+      "wall_time_ms": 461.093990271911,
+      "compile_time_ms": 253.47969436552376,
+      "execution_time_ms": 207.61429590638727,
+      "n_iterations": 10,
+      "input_shapes": {
+        "arg_0": [
+          12288,
+          3,
+          3
+        ],
+        "arg_1": [
+          1,
+          3,
+          6
+        ],
+        "arg_2": [
+          3,
+          12288
+        ],
+        "arg_3": [
+          200
+        ],
+        "arg_4": [
+          1,
+          3,
+          3
+        ]
+      },
+      "output_shape": [
+        1,
+        200,
+        6,
+        12288
+      ],
+      "device_type": "cpu",
+      "n_devices": 1,
+      "estimated_flops": 10149600,
+      "memory_bytes": 235929600,
+      "throughput_elements_per_sec": 71024010.82557797
+    },
+    {
+      "name": "single_link_heavy_large_freq",
+      "wall_time_ms": 305.2100071567111,
+      "compile_time_ms": 166.93531966302544,
+      "execution_time_ms": 138.27468749368563,
+      "n_iterations": 10,
+      "input_shapes": {
+        "arg_0": [
+          3072,
+          3,
+          3
+        ],
+        "arg_1": [
+          1,
+          3,
+          6
+        ],
+        "arg_2": [
+          3,
+          3072
+        ],
+        "arg_3": [
+          500
+        ],
+        "arg_4": [
+          1,
+          3,
+          3
+        ]
+      },
+      "output_shape": [
+        1,
+        500,
+        6,
+        3072
+      ],
+      "device_type": "cpu",
+      "n_devices": 1,
+      "estimated_flops": 10149600,
+      "memory_bytes": 147456000,
+      "throughput_elements_per_sec": 66649942.712189116
+    },
+    {
+      "name": "single_link_heavy_large_both",
+      "wall_time_ms": 1234.588360937778,
+      "compile_time_ms": 635.2453193394467,
+      "execution_time_ms": 599.3430415983312,
+      "n_iterations": 10,
+      "input_shapes": {
+        "arg_0": [
+          12288,
+          3,
+          3
+        ],
+        "arg_1": [
+          1,
+          3,
+          6
+        ],
+        "arg_2": [
+          3,
+          12288
+        ],
+        "arg_3": [
+          500
+        ],
+        "arg_4": [
+          1,
+          3,
+          3
+        ]
+      },
+      "output_shape": [
+        1,
+        500,
+        6,
+        12288
+      ],
+      "device_type": "cpu",
+      "n_devices": 1,
+      "estimated_flops": 10149600,
+      "memory_bytes": 589824000,
+      "throughput_elements_per_sec": 61507346.27983815
+    },
+    {
+      "name": "single_link_heavy_many_times",
+      "wall_time_ms": 6541.034151481776,
+      "compile_time_ms": 3431.9918889862797,
+      "execution_time_ms": 3109.0422624954954,
+      "n_iterations": 10,
+      "input_shapes": {
+        "arg_0": [
+          3072,
+          3,
+          3
+        ],
+        "arg_1": [
+          50,
+          3,
+          6
+        ],
+        "arg_2": [
+          3,
+          3072
+        ],
+        "arg_3": [
+          200
+        ],
+        "arg_4": [
+          50,
+          3,
+          3
+        ]
+      },
+      "output_shape": [
+        50,
+        200,
+        6,
+        3072
+      ],
+      "device_type": "cpu",
+      "n_devices": 1,
+      "estimated_flops": 10149600,
+      "memory_bytes": 2949120000,
+      "throughput_elements_per_sec": 59285138.13512918
+    },
+    {
+      "name": "single_link_heavy_heavy_combo",
+      "wall_time_ms": 15836.661518143956,
+      "compile_time_ms": 8107.035222346894,
+      "execution_time_ms": 7729.626295797061,
+      "n_iterations": 10,
+      "input_shapes": {
+        "arg_0": [
+          12288,
+          3,
+          3
+        ],
+        "arg_1": [
+          20,
+          3,
+          6
+        ],
+        "arg_2": [
+          3,
+          12288
+        ],
+        "arg_3": [
+          200
+        ],
+        "arg_4": [
+          20,
+          3,
+          3
+        ]
+      },
+      "output_shape": [
+        20,
+        200,
+        6,
+        12288
+      ],
+      "device_type": "cpu",
+      "n_devices": 1,
+      "estimated_flops": 10149600,
+      "memory_bytes": 4718592000,
+      "throughput_elements_per_sec": 38153461.59236141
+    },
+    {
+      "name": "single_link_heavy_huge_pixels",
+      "wall_time_ms": 601.9772734415408,
+      "compile_time_ms": 321.9491943406562,
+      "execution_time_ms": 280.0280791008845,
+      "n_iterations": 10,
+      "input_shapes": {
+        "arg_0": [
+          49152,
+          3,
+          3
+        ],
+        "arg_1": [
+          1,
+          3,
+          6
+        ],
+        "arg_2": [
+          3,
+          49152
+        ],
+        "arg_3": [
+          100
+        ],
+        "arg_4": [
+          1,
+          3,
+          3
+        ]
+      },
+      "output_shape": [
+        1,
+        100,
+        6,
+        49152
+      ],
+      "device_type": "cpu",
+      "n_devices": 1,
+      "estimated_flops": 10149600,
+      "memory_bytes": 471859200,
+      "throughput_elements_per_sec": 105315153.01854901
+    },
+    {
+      "name": "compute_response_heavy_large_freq",
+      "wall_time_ms": 1036.1862931555756,
+      "compile_time_ms": 522.8288056484113,
+      "execution_time_ms": 513.3574875071645,
+      "n_iterations": 10,
+      "input_shapes": {
+        "arg_0": [
+          500
+        ]
+      },
+      "output_shape": [
+        1,
+        500,
+        3,
+        3
+      ],
+      "device_type": "cpu",
+      "n_devices": 1,
+      "estimated_flops": 28593600,
+      "memory_bytes": 72000,
+      "throughput_elements_per_sec": 8765.821302912616
+    },
+    {
+      "name": "compute_response_heavy_large_pixels",
+      "wall_time_ms": 1687.678004098901,
+      "compile_time_ms": 646.9701249928524,
+      "execution_time_ms": 1040.7078791060485,
+      "n_iterations": 10,
+      "input_shapes": {
+        "arg_0": [
+          200
+        ]
+      },
+      "output_shape": [
+        1,
+        200,
+        3,
+        3
+      ],
+      "device_type": "cpu",
+      "n_devices": 1,
+      "estimated_flops": 28593600,
+      "memory_bytes": 28800,
+      "throughput_elements_per_sec": 1729.5919788232711
+    },
+    {
+      "name": "compute_response_heavy_large_both",
+      "wall_time_ms": 5124.6262417213675,
+      "compile_time_ms": 2073.016000019076,
+      "execution_time_ms": 3051.610241702292,
+      "n_iterations": 10,
+      "input_shapes": {
+        "arg_0": [
+          500
+        ]
+      },
+      "output_shape": [
+        1,
+        500,
+        3,
+        3
+      ],
+      "device_type": "cpu",
+      "n_devices": 1,
+      "estimated_flops": 28593600,
+      "memory_bytes": 72000,
+      "throughput_elements_per_sec": 1474.6313072700093
+    },
+    {
+      "name": "compute_response_heavy_huge_freq",
+      "wall_time_ms": 1918.7202749967887,
+      "compile_time_ms": 853.6067499856775,
+      "execution_time_ms": 1065.113525011111,
+      "n_iterations": 10,
+      "input_shapes": {
+        "arg_0": [
+          1000
+        ]
+      },
+      "output_shape": [
+        1,
+        1000,
+        3,
+        3
+      ],
+      "device_type": "cpu",
+      "n_devices": 1,
+      "estimated_flops": 28593600,
+      "memory_bytes": 144000,
+      "throughput_elements_per_sec": 8449.80350794636
+    },
+    {
+      "name": "compute_response_heavy_huge_pixels",
+      "wall_time_ms": 7188.260911300313,
+      "compile_time_ms": 2959.5509862992913,
+      "execution_time_ms": 4228.7099250010215,
+      "n_iterations": 10,
+      "input_shapes": {
+        "arg_0": [
+          200
+        ]
+      },
+      "output_shape": [
+        1,
+        200,
+        3,
+        3
+      ],
+      "device_type": "cpu",
+      "n_devices": 1,
+      "estimated_flops": 28593600,
+      "memory_bytes": 28800,
+      "throughput_elements_per_sec": 425.6617341752438
+    },
+    {
+      "name": "serial_medium",
+      "wall_time_ms": 656.0423999481525,
+      "compile_time_ms": 483.5435833471517,
+      "execution_time_ms": 172.49881660100073,
+      "n_iterations": 10,
+      "input_shapes": {
+        "arg_0": [
+          200
+        ]
+      },
+      "output_shape": [
+        1,
+        200,
+        3,
+        3
+      ],
+      "device_type": "cpu",
+      "n_devices": 1,
+      "estimated_flops": null,
+      "memory_bytes": 28800,
+      "throughput_elements_per_sec": 10434.854194759488
+    },
+    {
+      "name": "parallel_medium",
+      "wall_time_ms": 344.90300412677846,
+      "compile_time_ms": 205.41495833701143,
+      "execution_time_ms": 139.48804578976706,
+      "n_iterations": 10,
+      "input_shapes": {
+        "arg_0": [
+          200
+        ]
+      },
+      "output_shape": [
+        1,
+        200,
+        3,
+        3
+      ],
+      "device_type": "cpu",
+      "n_devices": 1,
+      "estimated_flops": null,
+      "memory_bytes": 28800,
+      "throughput_elements_per_sec": 12904.331620739138
+    },
+    {
+      "name": "serial_large_freq",
+      "wall_time_ms": 1011.0415541528102,
+      "compile_time_ms": 508.7547916530942,
+      "execution_time_ms": 502.28676249971613,
+      "n_iterations": 10,
+      "input_shapes": {
+        "arg_0": [
+          500
+        ]
+      },
+      "output_shape": [
+        1,
+        500,
+        3,
+        3
+      ],
+      "device_type": "cpu",
+      "n_devices": 1,
+      "estimated_flops": null,
+      "memory_bytes": 72000,
+      "throughput_elements_per_sec": 8959.025672118012
+    },
+    {
+      "name": "parallel_large_freq",
+      "wall_time_ms": 780.2230750016558,
+      "compile_time_ms": 403.64212500086677,
+      "execution_time_ms": 376.580950000789,
+      "n_iterations": 10,
+      "input_shapes": {
+        "arg_0": [
+          500
+        ]
+      },
+      "output_shape": [
+        1,
+        500,
+        3,
+        3
+      ],
+      "device_type": "cpu",
+      "n_devices": 1,
+      "estimated_flops": null,
+      "memory_bytes": 72000,
+      "throughput_elements_per_sec": 11949.621986960763
+    },
+    {
+      "name": "serial_large_pixels",
+      "wall_time_ms": 1250.3024989001765,
+      "compile_time_ms": 600.5158196979513,
+      "execution_time_ms": 649.7866792022251,
+      "n_iterations": 10,
+      "input_shapes": {
+        "arg_0": [
+          200
+        ]
+      },
+      "output_shape": [
+        1,
+        200,
+        3,
+        3
+      ],
+      "device_type": "cpu",
+      "n_devices": 1,
+      "estimated_flops": null,
+      "memory_bytes": 28800,
+      "throughput_elements_per_sec": 2770.1398899250257
+    },
+    {
+      "name": "parallel_large_pixels",
+      "wall_time_ms": 1102.0282292272896,
+      "compile_time_ms": 585.0460833171383,
+      "execution_time_ms": 516.9821459101513,
+      "n_iterations": 10,
+      "input_shapes": {
+        "arg_0": [
+          200
+        ]
+      },
+      "output_shape": [
+        1,
+        200,
+        3,
+        3
+      ],
+      "device_type": "cpu",
+      "n_devices": 1,
+      "estimated_flops": null,
+      "memory_bytes": 28800,
+      "throughput_elements_per_sec": 3481.74499688202
+    },
+    {
+      "name": "serial_large_both",
+      "wall_time_ms": 5048.931579221971,
+      "compile_time_ms": 2098.2208750210702,
+      "execution_time_ms": 2950.710704200901,
+      "n_iterations": 10,
+      "input_shapes": {
+        "arg_0": [
+          500
+        ]
+      },
+      "output_shape": [
+        1,
+        500,
+        3,
+        3
+      ],
+      "device_type": "cpu",
+      "n_devices": 1,
+      "estimated_flops": null,
+      "memory_bytes": 72000,
+      "throughput_elements_per_sec": 1525.0563173114156
+    },
+    {
+      "name": "parallel_large_both",
+      "wall_time_ms": 2558.0859167346107,
+      "compile_time_ms": 1519.3503333333258,
+      "execution_time_ms": 1038.735583401285,
+      "n_iterations": 10,
+      "input_shapes": {
+        "arg_0": [
+          500
+        ]
+      },
+      "output_shape": [
+        1,
+        500,
+        3,
+        3
+      ],
+      "device_type": "cpu",
+      "n_devices": 1,
+      "estimated_flops": null,
+      "memory_bytes": 72000,
+      "throughput_elements_per_sec": 4332.190089478774
+    }
+  ],
+  "system_info": {
+    "platform": "macOS-14.3.1-arm64-arm-64bit",
+    "python_version": "3.11.7",
+    "jax_version": "0.5.0",
+    "device_type": "cpu",
+    "n_devices": 1,
+    "devices": [
+      {
+        "kind": "cpu",
+        "id": 0
+      }
+    ]
+  },
+  "timestamp": "2025-12-16T11:00:20.332828"
+}
