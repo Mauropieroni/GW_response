@@ -111,16 +111,19 @@ def reshape_from_pmap(
 def _create_single_link_pmap_kernel():
     """Create pmap kernel for single_link_response over pixels."""
 
-    @partial(pmap, axis_name="pixel")
+    # in_axes specifies which axis to map for each argument:
+    # - 0 means map over axis 0 (sharded across devices)
+    # - None means broadcast (replicate to all devices)
+    @partial(pmap, axis_name="pixel", in_axes=(0, None, 0, None, None))
     def kernel(polarization_shard, arms_matrix, k_vector_shard, x_array, positions):
         """Compute single_link_response for a shard of pixels.
 
         Args:
-            polarization_shard: (pixels_per_device, 3, 3)
-            arms_matrix: (configs, 3, 6)
-            k_vector_shard: (3, pixels_per_device)
-            x_array: (freq,)
-            positions: (configs, 3, 3)
+            polarization_shard: (pixels_per_device, 3, 3) - sharded
+            arms_matrix: (configs, 3, 6) - broadcast
+            k_vector_shard: (3, pixels_per_device) - sharded
+            x_array: (freq,) - broadcast
+            positions: (configs, 3, 3) - broadcast
         """
         geometrical = geometrical_factor(arms_matrix, polarization_shard)
         xi_k_vec = xi_k_Avec_func(arms_matrix, k_vector_shard, x_array, geometrical)
