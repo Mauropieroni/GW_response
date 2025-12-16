@@ -3,8 +3,17 @@
 Script to compare performance across different hardware and optimization levels.
 
 Usage:
-    # Run benchmarks on current hardware
+    # Run standard benchmarks on current hardware
     python benchmark_comparison.py
+
+    # Run with heavy GPU stress tests (for multi-GPU systems)
+    python benchmark_comparison.py --heavy
+
+    # Run parallel vs serial comparison
+    python benchmark_comparison.py --parallel
+
+    # Run everything (standard + heavy + parallel)
+    python benchmark_comparison.py --full
 
     # Run with specific settings
     python benchmark_comparison.py --warmup 5 --iterations 20
@@ -58,7 +67,24 @@ def main():
         help="Run quick benchmark (fewer iterations, smaller sizes)",
     )
     parser.add_argument(
-        "--full", action="store_true", help="Run full benchmark suite (all sizes)"
+        "--heavy",
+        action="store_true",
+        help="Include heavy GPU stress tests (large arrays, high resolution)",
+    )
+    parser.add_argument(
+        "--parallel",
+        action="store_true",
+        help="Include parallel vs serial comparison benchmarks",
+    )
+    parser.add_argument(
+        "--full",
+        action="store_true",
+        help="Run everything: standard + heavy + parallel benchmarks",
+    )
+    parser.add_argument(
+        "--scaling",
+        action="store_true",
+        help="Run scaling benchmark (varies problem size)",
     )
 
     args = parser.parse_args()
@@ -93,9 +119,26 @@ def main():
             warmup_iterations=args.warmup, timing_iterations=args.iterations
         )
 
+    # Determine which benchmarks to run
+    include_heavy = args.heavy or args.full
+    include_parallel = args.parallel or args.full
+
     # Run benchmarks
     suite = BenchmarkSuite(config)
-    report = suite.run_all()
+    report = suite.run_all(include_heavy=include_heavy, include_parallel=include_parallel)
+
+    # Run scaling benchmark if requested
+    if args.scaling:
+        print("Running scaling benchmarks...")
+        suite.run_scaling_benchmark()
+        # Recreate report with scaling results included
+        from gw_response.benchmark import BenchmarkReport
+        from datetime import datetime
+        report = BenchmarkReport(
+            results=suite.benchmark.results,
+            system_info=suite._get_system_info(),
+            timestamp=datetime.now().isoformat(),
+        )
 
     # Print summary
     print()

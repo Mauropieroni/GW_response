@@ -409,13 +409,185 @@ class BenchmarkSuite:
 
         return results
 
-    def run_all(self) -> BenchmarkReport:
-        """Run complete benchmark suite."""
+    def run_heavy_benchmarks(self) -> List[TimingResult]:
+        """Heavy-duty benchmarks for GPU stress testing.
+
+        These are designed to fully utilize multi-GPU systems like 2x A100.
+        """
+        from . import (
+            LISA,
+            Pixel,
+            unit_vec,
+            uv_analytical,
+            polarization_tensors_LR,
+            get_single_link_response,
+            compute_response,
+        )
+
+        results = []
+        lisa = LISA()
+
+        print("  Running heavy single_link benchmarks...")
+
+        # Heavy single_link configurations
+        heavy_single_link_configs = [
+            {"nside": 32, "n_freq": 200, "n_times": 1, "label": "large_pixels"},
+            {"nside": 16, "n_freq": 500, "n_times": 1, "label": "large_freq"},
+            {"nside": 32, "n_freq": 500, "n_times": 1, "label": "large_both"},
+            {"nside": 16, "n_freq": 200, "n_times": 50, "label": "many_times"},
+            {"nside": 32, "n_freq": 200, "n_times": 20, "label": "heavy_combo"},
+            {"nside": 64, "n_freq": 100, "n_times": 1, "label": "huge_pixels"},
+        ]
+
+        for cfg in heavy_single_link_configs:
+            pixel = Pixel(NSIDE=cfg["nside"])
+            freqs = jnp.logspace(-4, -1, cfg["n_freq"])
+            times = jnp.linspace(0, 1, cfg["n_times"])
+
+            k_vector = unit_vec(pixel.theta_pixel, pixel.phi_pixel)
+            u, v = uv_analytical(pixel.theta_pixel, pixel.phi_pixel)
+            p1, _ = polarization_tensors_LR(u, v)
+
+            positions = lisa.satellite_positions(times) / lisa.armlength
+            arms_matrix = lisa.detector_arms(times) / lisa.armlength
+            x_array = lisa.x(freqs)
+
+            n_pixels = 12 * cfg["nside"] ** 2
+            name = f"single_link_heavy_{cfg['label']}"
+            print(f"    {name}: {n_pixels} pixels, {cfg['n_freq']} freqs, {cfg['n_times']} times")
+
+            result = self.benchmark.time_function(
+                get_single_link_response,
+                p1,
+                arms_matrix,
+                k_vector,
+                x_array,
+                positions,
+                name=name,
+            )
+            results.append(result)
+
+        print("  Running heavy compute_response benchmarks...")
+
+        # Heavy full pipeline configurations
+        heavy_pipeline_configs = [
+            {"n_freq": 500, "nside": 16, "label": "large_freq"},
+            {"n_freq": 200, "nside": 32, "label": "large_pixels"},
+            {"n_freq": 500, "nside": 32, "label": "large_both"},
+            {"n_freq": 1000, "nside": 16, "label": "huge_freq"},
+            {"n_freq": 200, "nside": 64, "label": "huge_pixels"},
+        ]
+
+        for cfg in heavy_pipeline_configs:
+            freqs = jnp.logspace(-4, -1, cfg["n_freq"])
+            n_pixels = 12 * cfg["nside"] ** 2
+            name = f"compute_response_heavy_{cfg['label']}"
+            print(f"    {name}: {n_pixels} pixels, {cfg['n_freq']} freqs")
+
+            result = self.benchmark.time_function(
+                compute_response, freqs, nside=cfg["nside"], name=name
+            )
+            results.append(result)
+
+        return results
+
+    def run_parallel_benchmarks(self) -> List[TimingResult]:
+        """Benchmark parallel vs serial execution.
+
+        Compares compute_response with parallel=False vs parallel=True.
+        """
+        from . import compute_response
+
+        results = []
+        n_devices = len(jax.devices())
+
+        print(f"  Running parallel benchmarks ({n_devices} devices)...")
+
+        # Configurations that benefit from parallelization
+        parallel_configs = [
+            {"n_freq": 200, "nside": 16, "label": "medium"},
+            {"n_freq": 500, "nside": 16, "label": "large_freq"},
+            {"n_freq": 200, "nside": 32, "label": "large_pixels"},
+            {"n_freq": 500, "nside": 32, "label": "large_both"},
+        ]
+
+        for cfg in parallel_configs:
+            freqs = jnp.logspace(-4, -1, cfg["n_freq"])
+            n_pixels = 12 * cfg["nside"] ** 2
+
+            # Serial
+            name_serial = f"serial_{cfg['label']}"
+            print(f"    {name_serial}: {n_pixels} pixels, {cfg['n_freq']} freqs")
+            result_serial = self.benchmark.time_function(
+                compute_response, freqs, nside=cfg["nside"], parallel=False, name=name_serial
+            )
+            results.append(result_serial)
+
+            # Parallel
+            name_parallel = f"parallel_{cfg['label']}"
+            print(f"    {name_parallel}: {n_pixels} pixels, {cfg['n_freq']} freqs")
+            result_parallel = self.benchmark.time_function(
+                compute_response, freqs, nside=cfg["nside"], parallel=True, name=name_parallel
+            )
+            results.append(result_parallel)
+
+            # Report speedup immediately
+            speedup = result_serial.execution_time_ms / result_parallel.execution_time_ms
+            print(f"      -> Parallel speedup: {speedup:.2f}x")
+
+        return results
+
+    def run_scaling_benchmark(self, max_nside: int = 64) -> List[TimingResult]:
+        """Benchmark scaling with problem size.
+
+        Tests how performance scales with increasing pixel count.
+        """
+        from . import compute_response
+
+        results = []
+        freqs = jnp.logspace(-4, -1, 200)
+
+        print("  Running scaling benchmarks...")
+
+        # Test different NSIDE values (pixels = 12 * nside^2)
+        nsides = [4, 8, 16, 32]
+        if max_nside >= 64:
+            nsides.append(64)
+        if max_nside >= 128:
+            nsides.append(128)
+
+        for nside in nsides:
+            n_pixels = 12 * nside ** 2
+            name = f"scaling_nside{nside}"
+            print(f"    {name}: {n_pixels} pixels")
+
+            result = self.benchmark.time_function(
+                compute_response, freqs, nside=nside, name=name
+            )
+            results.append(result)
+
+        return results
+
+    def run_all(self, include_heavy: bool = False, include_parallel: bool = False) -> BenchmarkReport:
+        """Run complete benchmark suite.
+
+        Args:
+            include_heavy: Include heavy GPU stress tests
+            include_parallel: Include parallel vs serial comparison
+        """
         print("Running single_link benchmarks...")
         self.run_single_link_benchmarks()
 
         print("Running full pipeline benchmarks...")
         self.run_full_pipeline_benchmarks()
+
+        if include_heavy:
+            print("Running heavy benchmarks...")
+            self.run_heavy_benchmarks()
+
+        if include_parallel:
+            print("Running parallel benchmarks...")
+            self.run_parallel_benchmarks()
 
         return BenchmarkReport(
             results=self.benchmark.results,
