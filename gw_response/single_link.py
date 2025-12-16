@@ -1,4 +1,5 @@
 import jax
+from functools import partial
 
 jax.config.update("jax_enable_x64", True)
 # jax.checking_leaks = True
@@ -202,19 +203,21 @@ def get_single_link_response(
     )
 
 
-@jax.jit
+@partial(jax.jit, static_argnums=(0,))
 def linear_response_angular(TDI_idx, single_link, arms_matrix_rescaled, x_vector):
+    """Linear response with static TDI index for XLA optimization."""
     ### tdi_mat has shape configuration, x_vector, TDI, arms
     tdi_mat = tdi_matrix(TDI_idx, arms_matrix_rescaled, x_vector)
 
     ### single_link has shape configuration, x_vector, arms, pixels
 
     ### linear response is configuration, x_vector, TDI, pixels
-    return jnp.einsum("...ijk,...ikl->...ijl", tdi_mat, single_link)
+    return jnp.einsum("...ijk,...ikl->...ijl", tdi_mat, single_link, optimize="optimal")
 
 
-@jax.jit
+@partial(jax.jit, static_argnums=(0,))
 def quadratic_response_angular(TDI_idx, single_link, arms_matrix_rescaled, x_vector):
+    """Quadratic response with static TDI index for XLA optimization."""
     ### linear response is configuration, x_vector, TDI, pixels
     linear_response = linear_response_angular(
         TDI_idx, single_link, arms_matrix_rescaled, x_vector
@@ -225,19 +228,21 @@ def quadratic_response_angular(TDI_idx, single_link, arms_matrix_rescaled, x_vec
         "...ijl,...ikl->...ijkl",
         linear_response,
         jnp.conjugate(linear_response),
+        optimize="optimal",
     )
 
     ### The first 2 is sum over polarization the second is for the h.c. sum
     return 2 * 2 * quadratic_response / jnp.pi / 4
 
 
-@jax.jit
+@partial(jax.jit, static_argnums=(0,))
 def quadratic_integrand(
     TDI_idx,
     single_link,
     arms_matrix_rescaled,
     x_vector,
 ):
+    """Quadratic integrand with static TDI index for XLA optimization."""
     ### Defines the integrand using the TDI factors
     return quadratic_response_angular(
         TDI_idx, single_link, arms_matrix_rescaled, x_vector

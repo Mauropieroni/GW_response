@@ -1,4 +1,5 @@
 import jax
+from functools import partial
 
 jax.config.update("jax_enable_x64", True)
 # jax.checking_leaks = True
@@ -220,12 +221,13 @@ TDI_labels = {
 }
 
 
-@jax.jit
+@partial(jax.jit, static_argnums=(0,))
 def tdi_matrix(TDI_idx, arms_matrix_rescaled, x_vector):
+    """Compute TDI matrix with static TDI index for better XLA optimization."""
     return jax.lax.switch(TDI_idx, tdi_fun_list, arms_matrix_rescaled, x_vector)
 
 
-@jax.jit
+@partial(jax.jit, static_argnums=(0,))
 def build_tdi(TDI_idx, single_link, arms_matrix_rescaled, x_vector):
     ### tdi_mat has shape configuration, x_vector, TDI, arms
     tdi_mat = tdi_matrix(TDI_idx, arms_matrix_rescaled, x_vector)

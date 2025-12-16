@@ -2,6 +2,7 @@
 
 import os
 import jax
+from functools import partial
 
 jax.config.update("jax_enable_x64", True)
 # jax.checking_leaks = True
@@ -145,30 +146,32 @@ def single_link_OMS_noise_variance(
     return jnp.einsum("...ij,k->...kij", parameters_matrix, N_int)
 
 
-@jax.jit
+@partial(jax.jit, static_argnums=(0,))
 def tdi_projection(
     TDI_idx,
     single_link_mat,
     arms_matrix_rescaled,
     x_vector,
 ):
-    """
-    TM_acceleration_parameters is a configuration  of len 6
-    """
+    """TDI projection with static TDI index for XLA optimization."""
 
     ### tdi_mat has shape configuration, x_vector, TDI, arms
     tdi_mat = tdi_matrix(TDI_idx, arms_matrix_rescaled, x_vector)
 
     ### The shape will be configurations, frequency, tdi, arms
-    first_contraction = jnp.einsum("...ijk,...ikl->...ijl", tdi_mat, single_link_mat)
+    first_contraction = jnp.einsum(
+        "...ijk,...ikl->...ijl", tdi_mat, single_link_mat, optimize="optimal"
+    )
 
     ### The shape will be configurations, frequency, tdi, tdi
-    res = jnp.einsum("...ijk,...ilk->...ijl", jnp.conjugate(tdi_mat), first_contraction)
+    res = jnp.einsum(
+        "...ijk,...ilk->...ijl", jnp.conjugate(tdi_mat), first_contraction, optimize="optimal"
+    )
 
     return res
 
 
-@jax.jit
+@partial(jax.jit, static_argnums=(0,))
 def _noise_TM_matrix(
     TDI_idx,
     frequency,
@@ -176,7 +179,7 @@ def _noise_TM_matrix(
     arms_matrix_rescaled,
     x_vector,
 ):
-    """TO ADD."""
+    """Noise TM matrix with static TDI index for XLA optimization."""
 
     single_link_mat = single_link_TM_acceleration_noise_variance(
         frequency, TM_acceleration_parameters, arms_matrix_rescaled, x_vector
@@ -213,7 +216,7 @@ def noise_TM_matrix(
     )
 
 
-@jax.jit
+@partial(jax.jit, static_argnums=(0,))
 def _noise_OMS_matrix(
     TDI_idx,
     frequency,
@@ -221,7 +224,7 @@ def _noise_OMS_matrix(
     arms_matrix_rescaled,
     x_vector,
 ):
-    """TO ADD."""
+    """Noise OMS matrix with static TDI index for XLA optimization."""
 
     single_link_mat = single_link_OMS_noise_variance(
         frequency, OMS_parameters, arms_matrix_rescaled, x_vector
