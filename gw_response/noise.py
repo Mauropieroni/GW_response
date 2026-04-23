@@ -1,42 +1,34 @@
-# WORKING PROGRESS
+# WORK IN PROGRESS
 
+# Global imports
 import os
 import jax
-import numpy as np
-jax.config.update("jax_enable_x64", True)
-# jax.checking_leaks = True
 import jax.numpy as jnp
+import numpy as np
+from scipy.interpolate import interp1d
 
-from .constants import PhysicalConstants
+
+# Local imports
 from .space_based_tdi import tdi_matrix
 from .utils import arm_length_exponential
-import pickle
-from scipy.interpolate import interp1d
-from pathlib import Path
 
-#load once at module import
-# with open("/home/zaldivar/Documents/Androniki/phd/LIGO/GW_response/LIGO.pkl", "rb") as f:
-#     _ligo_psd_data = pickle.load(f)
-# _ligo_freqs = _ligo_psd_data["Frequency"]
-# _ligo_psd   = _ligo_psd_data["Mid high/Late low"]
-# _ligo_interp = interp1d(
-#     _ligo_freqs, _ligo_psd,
-#     kind="linear", bounds_error=False, fill_value="extrapolate"
-# )
 
-DATA_PATH = Path(__file__).resolve().parent.parent / "aLIGODesign.txt"
-data = np.loadtxt(DATA_PATH)
+# update JAX configuration to enable 64-bit precision,
+jax.config.update("jax_enable_x64", True)
+
+
+path_to_LIGO_design = os.path.join(
+    os.path.dirname(__file__), "noise_data/aLIGODesign.txt"
+)
+data = np.loadtxt(path_to_LIGO_design)
+
 
 _ligo_freqs = data[:, 0]
-_ligo_psd   = data[:, 1]
-
+_ligo_psd = data[:, 1]
 _ligo_interp = interp1d(
-    _ligo_freqs,
-    _ligo_psd,
-    kind="linear",
-    bounds_error=False,
-    fill_value="extrapolate"
+    _ligo_freqs, _ligo_psd, kind="linear", bounds_error=False, fill_value=np.nan
 )
+
 
 @jax.jit
 def LISA_acceleration_noise(frequency, acc_param=3.0):
@@ -81,11 +73,13 @@ def LISA_interferometric_noise(frequency, inter_param=15.0):
 
     return inter_param**2 * 1e-24 * first * second
 
+
 def LIGO_noise(frequencies):
     """
     Plain-Python interpolator: returns PSD at `frequencies`.
     """
     return jnp.array(_ligo_interp(frequencies))
+
 
 @jax.jit
 def single_link_TM_acceleration_noise_variance(
@@ -98,46 +92,46 @@ def single_link_TM_acceleration_noise_variance(
     TM_acceleration_parameters is a vector of len 6
     """
 
-    ### the shape of t_retarded_factor is configurations, x_vector, arms
+    # the shape of t_retarded_factor is configurations, x_vector, arms
     t_retarded_factor = arm_length_exponential(arms_matrix_rescaled, x_vector)
 
-    ### This would be a diag matrix on the last 2 indexes,
-    ### the shape is configurations, x_vector, arms, arms
+    # This would be a diag matrix on the last 2 indexes,
+    # the shape is configurations, x_vector, arms, arms
     t_retarded_coeffs = jnp.einsum(
         "ij,...kj->...kij", jnp.identity(6), t_retarded_factor
     )
 
-    ### This would be a diag matrix on the last 2 indexes,
-    ### the shape is configurations, x_vector, arms, arms
+    # This would be a diag matrix on the last 2 indexes,
+    # the shape is configurations, x_vector, arms, arms
     flipped_t_retarded_coeffs = jnp.einsum(
         "ij,...kj->...kij",
         jnp.identity(6),
         jnp.roll(t_retarded_factor, 3, axis=-1),
     )
 
-    ### The shape will be configurations, arms, arms
+    # The shape will be configurations, arms, arms
     parameters_matrix = jnp.einsum(
         "ij,...j->...ij", jnp.identity(6), TM_acceleration_parameters**2
     )
 
-    ### The shape will be configurations, arms, arms
+    # The shape will be configurations, arms, arms
     flipped_parameters_matrix = jnp.einsum(
         "ij,...j->...ij",
         jnp.identity(6),
         jnp.roll(TM_acceleration_parameters**2, 3),
     )
 
-    ### The shape will be frequency
+    # The shape will be frequency
     N_acc = LISA_acceleration_noise(frequency, acc_param=1.0)
 
-    ### The shape will be configurations, frequency, arms, arms
+    # The shape will be configurations, frequency, arms, arms
     noise_matrix = jnp.einsum(
         "...ij,k->...kij", parameters_matrix + flipped_parameters_matrix, N_acc
     )
 
-    ### t_retarded_coeffs is configurations, x_vector, arms, arms
-    ### flipped_parameters_matrix is configurations, arms, arms
-    ### The shape will be configurations, frequency, arms, arms
+    # t_retarded_coeffs is configurations, x_vector, arms, arms
+    # flipped_parameters_matrix is configurations, arms, arms
+    # The shape will be configurations, frequency, arms, arms
     delayed_1 = jnp.einsum(
         "...kij,...ij->...kij", t_retarded_coeffs, flipped_parameters_matrix
     )
@@ -154,7 +148,7 @@ def single_link_TM_acceleration_noise_variance(
         N_acc,
     )
 
-    ### The shape will be configurations, frequency, arms, arms
+    # The shape will be configurations, frequency, arms, arms
     return noise_matrix + jnp.roll(cross_matrix, 3, axis=-1)
 
 
@@ -164,13 +158,13 @@ def single_link_OMS_noise_variance(
 ):
     """TO ADD."""
 
-    ### The shape will be configurations, arms, arms
+    # The shape will be configurations, arms, arms
     parameters_matrix = jnp.einsum("ij,...j->...ij", jnp.identity(6), OMS_parameters**2)
 
-    ### The shape will be frequency
+    # The shape will be frequency
     N_int = LISA_interferometric_noise(frequency, inter_param=1.0)
 
-    ### The shape will be configurations, frequency, arms, arms
+    # The shape will be configurations, frequency, arms, arms
     return jnp.einsum("...ij,k->...kij", parameters_matrix, N_int)
 
 
@@ -193,13 +187,13 @@ def tdi_projection(
     TM_acceleration_parameters is a configuration  of len 6
     """
 
-    ### tdi_mat has shape configuration, x_vector, TDI, arms
+    # tdi_mat has shape configuration, x_vector, TDI, arms
     tdi_mat = tdi_matrix(TDI_idx, arms_matrix_rescaled, x_vector)
 
-    ### The shape will be configurations, frequency, tdi, arms
+    # The shape will be configurations, frequency, tdi, arms
     first_contraction = jnp.einsum("...ijk,...ikl->...ijl", tdi_mat, single_link_mat)
 
-    ### The shape will be configurations, frequency, tdi, tdi
+    # The shape will be configurations, frequency, tdi, tdi
     res = jnp.einsum("...ijk,...ilk->...ijl", jnp.conjugate(tdi_mat), first_contraction)
 
     return res

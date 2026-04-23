@@ -1,13 +1,18 @@
+# Global imports
+import chex
 import jax
 import jax.numpy as jnp
 
-jax.config.update("jax_enable_x64", True)
-import chex
 from functools import partial
 
+
+# Local imports
 from .constants import PhysicalConstants
 from .detector import Detector
 from .utils import coordinates_numerical, arms_matrix_numerical
+
+# Update JAX configuration to enable 64-bit precision
+jax.config.update("jax_enable_x64", True)
 
 
 @jax.jit

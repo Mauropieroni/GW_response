@@ -1,2 +1,44 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gw_response"
+version = "0.1.0"
+description = "Code for fast PTA forecasts"
+readme = "README.md"
+requires-python = ">=3.8"
+authors = [
+    { name = "Mauro Pieroni", email = "mauro.pieroni@csic.es" },
+    { name = "James Alvey", email = "jbga2@cam.ac.uk" },
+    { name = "Androniki Dimitriou", email = "androniki.dimitriou@ific.uv.es" },
+]
+license = { text = "GNU General Public License v3.0 only" }
+keywords = ["LISA", "LVK", "GWs"]
+urls = { Homepage = "https://github.com/Mauropieroni/gw_response/" }
+
+dependencies = [
+    "numpy>=1.26.4; python_version>='3.9'",
+    "numpy==1.24.4; python_version<'3.9'",
+    "jax>=0.4.25; python_version>='3.9'",
+    "jax==0.4.13; python_version<'3.9'",
+    "jaxlib>=0.4.25; python_version>='3.9'",
+    "jaxlib==0.4.13; python_version<'3.9'",
+    "chex>=0.1.85; python_version>='3.9'",
+    "chex==0.1.7; python_version<'3.9'",
+    "healpy>=1.16.6; python_version>='3.9'",
+    "healpy==1.16.2; python_version<'3.9'",
+    "typing_extensions==4.10.0; python_version=='3.11'",
+]
+
+[project.optional-dependencies]
+dev = ["flake8-black>=0.3.6", "pytest"]
+
+[tool.setuptools]
+packages = ["gw_response"]
+
+[tool.setuptools.package-data]
+gw_response = ["noise_data/*"]
+
 [tool.black]
 line_length = 88

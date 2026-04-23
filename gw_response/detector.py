@@ -1,8 +1,7 @@
-import chex
+# Global imports
 import jax.numpy as jnp
-
-
 from abc import ABC, abstractmethod
+from typing import Any
 
 
 class Detector(ABC):
@@ -11,18 +10,18 @@ class Detector(ABC):
     fmax: float
     armlength: float
     res: float
-    ps: chex.dataclass
+    ps: Any
 
     @abstractmethod
     def __init__(self):
         pass
 
     @abstractmethod
-    def satellite_positions(self):
+    def satellite_positions(self, *args, **kwargs):
         pass
 
     @abstractmethod
-    def detector_arms(self):
+    def detector_arms(self, *args, **kwargs):
         pass
 
     def frequency_vec(self, freq_pts):

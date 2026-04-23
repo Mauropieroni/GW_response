@@ -1,8 +1,11 @@
+# Global imports
 import jax
 import jax.numpy as jnp
 import chex
 from dataclasses import field
 
+
+# Update JAX configuration to enable 64-bit precision
 jax.config.update("jax_enable_x64", True)
 
 
@@ -38,7 +41,7 @@ class PhysicalConstants:
     yr: float = 365.25 * day  # year in s
     Hubble_over_h: float = 3.24e-18  # H0 divided by h in units of 1/s
     AU: float = 1.495978707e11  # Astronomical unit in meters
-    cmb_dipole: jnp.array = field(
+    cmb_dipole: jax.Array = field(
         default_factory=lambda: jnp.array([-0.972, 0.137, -0.191])
     )
     # Direction on the CMB dipole
@@ -70,7 +73,7 @@ class BasisTransformations:
     astronomical models.
     """
 
-    XYZ_to_AET: jnp.array = field(
+    XYZ_to_AET: jax.Array = field(
         default_factory=lambda: jnp.array(
             [
                 [-1 / jnp.sqrt(2), 0, 1 / jnp.sqrt(2)],
