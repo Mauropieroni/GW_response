@@ -2,7 +2,7 @@
 
 import os
 import jax
-
+import numpy as np
 jax.config.update("jax_enable_x64", True)
 # jax.checking_leaks = True
 import jax.numpy as jnp
@@ -12,17 +12,31 @@ from .space_based_tdi import tdi_matrix
 from .utils import arm_length_exponential
 import pickle
 from scipy.interpolate import interp1d
+from pathlib import Path
 
-# load once at module import
-with open("/home/zaldivar/Documents/Androniki/phd/LIGO/GW_response/LIGO.pkl", "rb") as f:
-    _ligo_psd_data = pickle.load(f)
-_ligo_freqs = _ligo_psd_data["Frequency"]
-_ligo_psd   = _ligo_psd_data["Mid high/Late low"]
+#load once at module import
+# with open("/home/zaldivar/Documents/Androniki/phd/LIGO/GW_response/LIGO.pkl", "rb") as f:
+#     _ligo_psd_data = pickle.load(f)
+# _ligo_freqs = _ligo_psd_data["Frequency"]
+# _ligo_psd   = _ligo_psd_data["Mid high/Late low"]
+# _ligo_interp = interp1d(
+#     _ligo_freqs, _ligo_psd,
+#     kind="linear", bounds_error=False, fill_value="extrapolate"
+# )
+
+DATA_PATH = Path(__file__).resolve().parent.parent / "aLIGODesign.txt"
+data = np.loadtxt(DATA_PATH)
+
+_ligo_freqs = data[:, 0]
+_ligo_psd   = data[:, 1]
+
 _ligo_interp = interp1d(
-    _ligo_freqs, _ligo_psd,
-    kind="linear", bounds_error=False, fill_value="extrapolate"
+    _ligo_freqs,
+    _ligo_psd,
+    kind="linear",
+    bounds_error=False,
+    fill_value="extrapolate"
 )
-
 
 @jax.jit
 def LISA_acceleration_noise(frequency, acc_param=3.0):
