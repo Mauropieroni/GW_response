@@ -155,11 +155,14 @@ class TestNoise(unittest.TestCase):
         TM_params = jnp.ones(shape=(100, 6))
         OMS_params = jnp.ones(shape=(100, 6))
 
-        noise = gwr.Noise(ps=gwr.PhysicalConstants(), det=gwr.LISA())
+        noise = gwr.Noise(
+            ps=gwr.PhysicalConstants(),
+            det=gwr.LISA(),
+            frequency_array=freqs,
+        )
 
         noise.compute_detector(
             times_in_years=time_in_years,
-            frequency_array=freqs,
             TM_acceleration_parameters=TM_params,
             OMS_parameters=OMS_params,
             TDI="XYZ",

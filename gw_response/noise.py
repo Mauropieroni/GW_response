@@ -246,96 +246,62 @@ class Noise(object):
 
     ps: chex.dataclass = PhysicalConstants()
     det: chex.dataclass = field(default_factory=lambda: LISA())
+    frequency_array: jnp.array = None
     TM_noise_matrix = {}
     OMS_noise_matrix = {}
     noise_matrix = {}
 
-    def get_arms_and_x(self, times_in_years, frequency_array):
-        arms_matrix_rescaled = (
-            self.det.detector_arms(times_in_years) / self.det.armlength
-        )
-        x_vector = self.det.x(frequency_array)
-        return arms_matrix_rescaled, x_vector
+    def __post_init__(self):
+        self.x_vector = self.det.x(self.frequency_array)
 
-    def get_single_link_TM_noise(
-        self, times_in_years, frequency_array, TM_acceleration_parameters
-    ):
-        arms_matrix_rescaled, x_vector = self.get_arms_and_x(
-            times_in_years, frequency_array
-        )
+    def get_arms_matrix(self, times_in_years):
+        return self.det.detector_arms(times_in_years) / self.det.armlength
+
+    def get_single_link_TM_noise(self, times_in_years, TM_acceleration_parameters):
         return single_link_TM_acceleration_noise_variance(
-            frequency_array,
+            self.frequency_array,
             TM_acceleration_parameters,
-            arms_matrix_rescaled,
-            x_vector,
+            self.get_arms_matrix(times_in_years),
+            self.x_vector,
         )
 
-    def get_single_link_OMS_noise(
-        self, times_in_years, frequency_array, OMS_parameters
-    ):
-        arms_matrix_rescaled, x_vector = self.get_arms_and_x(
-            times_in_years, frequency_array
-        )
+    def get_single_link_OMS_noise(self, times_in_years, OMS_parameters):
         return single_link_OMS_noise_variance(
-            frequency_array, OMS_parameters, arms_matrix_rescaled, x_vector
+            self.frequency_array,
+            OMS_parameters,
+            self.get_arms_matrix(times_in_years),
+            self.x_vector,
         )
 
     def get_TM_noise_matrix(
-        self,
-        times_in_years,
-        frequency_array,
-        TM_acceleration_parameters,
-        TDI="XYZ",
+        self, times_in_years, TM_acceleration_parameters, TDI="XYZ"
     ):
-        arms_matrix_rescaled, x_vector = self.get_arms_and_x(
-            times_in_years, frequency_array
-        )
         return noise_TM_matrix(
             TDI_map[TDI],
-            frequency_array,
+            self.frequency_array,
             TM_acceleration_parameters,
-            arms_matrix_rescaled,
-            x_vector,
+            self.get_arms_matrix(times_in_years),
+            self.x_vector,
         )
 
-    def get_OMS_noise_matrix(
-        self,
-        times_in_years,
-        frequency_array,
-        OMS_parameters,
-        TDI="XYZ",
-    ):
-        arms_matrix_rescaled, x_vector = self.get_arms_and_x(
-            times_in_years, frequency_array
-        )
+    def get_OMS_noise_matrix(self, times_in_years, OMS_parameters, TDI="XYZ"):
         return noise_OMS_matrix(
             TDI_map[TDI],
-            frequency_array,
+            self.frequency_array,
             OMS_parameters,
-            arms_matrix_rescaled,
-            x_vector,
+            self.get_arms_matrix(times_in_years),
+            self.x_vector,
         )
 
     def compute_detector(
-        self,
-        times_in_years,
-        frequency_array,
-        TM_acceleration_parameters,
-        OMS_parameters,
-        TDI="XYZ",
+        self, times_in_years, TM_acceleration_parameters, OMS_parameters, TDI="XYZ"
     ):
         self.TM_noise_matrix[TDI] = self.get_TM_noise_matrix(
-            times_in_years,
-            frequency_array,
-            TM_acceleration_parameters,
-            TDI=TDI,
+            times_in_years, TM_acceleration_parameters, TDI=TDI
         )
 
         self.OMS_noise_matrix[TDI] = self.get_OMS_noise_matrix(
-            times_in_years,
-            frequency_array,
-            OMS_parameters,
-            TDI=TDI,
+            times_in_years, OMS_parameters, TDI=TDI
         )
 
         self.noise_matrix[TDI] = self.TM_noise_matrix[TDI] + self.OMS_noise_matrix[TDI]
