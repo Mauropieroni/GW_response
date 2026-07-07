@@ -12,16 +12,12 @@ authors = [
     { name = "Mauro Pieroni", email = "mauro.pieroni@cern.ch" },
     { name = "James Alvey", email = "j.b.g.alvey@uva.nl" },
 ]
-requires-python = ">=3.8"
+requires-python = ">=3.10"
 dependencies = [
-    "numpy>=1.26.4; python_version>='3.9'",
-    "numpy==1.24.4; python_version<'3.9'",
-    "jax>=0.4.25; python_version>='3.9'",
-    "jax==0.4.13; python_version<'3.9'",
-    "jaxlib>=0.4.25; python_version>='3.9'",
-    "jaxlib==0.4.13; python_version<'3.9'",
-    "chex>=0.1.85; python_version>='3.9'",
-    "chex==0.1.7; python_version<'3.9'",
+    "numpy>=1.26.4",
+    "jax>=0.4.25",
+    "jaxlib>=0.4.25",
+    "chex>=0.1.85",
     "jax-healpy>=0.7; python_version>='3.11'",
     "jax-healpy>=0.6,<0.7; python_version<'3.11'",
     "typing_extensions>=4.10.0",
