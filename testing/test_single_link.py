@@ -4,8 +4,6 @@ import gw_response as gwr
 import os
 import numpy as np
 
-from gw_response.single_link import quadratic_response_integrated
-
 TEST_DATA_PATH = os.path.join(os.path.dirname(__file__), "test_data/")
 
 
@@ -47,7 +45,6 @@ class TestSingleLink(unittest.TestCase):
         unit_vector = gwr.unit_vec(theta, phi)
         lisa = gwr.LISA()
         freqs = jnp.logspace(-5, 0, 300)
-        time_in_years = jnp.linspace(0, 1.0, 100)
         xi_k = gwr.xi_k_no_G(
             unit_wavevector=unit_vector,
             x_vector=lisa.x(freqs),
@@ -82,7 +79,6 @@ class TestSingleLink(unittest.TestCase):
 
     def test_geometrical_factor(self):
         lisa = gwr.LISA()
-        time_in_years = jnp.linspace(0, 1.0, 100)
         pixel = gwr.Pixel()
         theta, phi = pixel.theta_pixel, pixel.phi_pixel
         u, v = gwr.uv_analytical(theta, phi)
@@ -97,7 +93,6 @@ class TestSingleLink(unittest.TestCase):
     def test_xi_k_Avec(self):
         lisa = gwr.LISA()
         freqs = jnp.logspace(-5, 0, 300)
-        time_in_years = jnp.linspace(0, 1.0, 100)
         pixel = gwr.Pixel()
         theta, phi = pixel.theta_pixel, pixel.phi_pixel
         unit_vector = gwr.unit_vec(theta, phi)
@@ -119,7 +114,6 @@ class TestSingleLink(unittest.TestCase):
     def test_single_link_response(self):
         lisa = gwr.LISA()
         freqs = jnp.logspace(-5, 0, 300)
-        time_in_years = jnp.linspace(0, 1.0, 100)
         pixel = gwr.Pixel()
         theta, phi = pixel.theta_pixel, pixel.phi_pixel
         unit_vector = gwr.unit_vec(theta, phi)
