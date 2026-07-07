@@ -22,8 +22,8 @@ dependencies = [
     "jaxlib==0.4.13; python_version<'3.9'",
     "chex>=0.1.85; python_version>='3.9'",
     "chex==0.1.7; python_version<'3.9'",
-    "healpy>=1.16.6; python_version>='3.9'",
-    "healpy==1.16.2; python_version<'3.9'",
+    "jax-healpy>=0.7; python_version>='3.11'",
+    "jax-healpy>=0.6,<0.7; python_version<'3.11'",
     "typing_extensions>=4.10.0",
 ]
 

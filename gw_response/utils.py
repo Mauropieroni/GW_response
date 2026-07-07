@@ -4,7 +4,7 @@ import jax
 import jax.numpy as jnp
 import chex
 import numpy as np
-import healpy as hp
+import jax_healpy as hp
 
 # Update jax configuration to enable 64-bit precision for numerical computations
 jax.config.update("jax_enable_x64", True)
