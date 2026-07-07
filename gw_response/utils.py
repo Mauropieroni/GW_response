@@ -1,13 +1,13 @@
+# Global imports
 import os
-
 import jax
 import jax.numpy as jnp
-
-jax.config.update("jax_enable_x64", True)
 import chex
-
 import numpy as np
 import healpy as hp
+
+# Update jax configuration to enable 64-bit precision for numerical computations
+jax.config.update("jax_enable_x64", True)
 
 
 @chex.dataclass

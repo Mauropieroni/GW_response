@@ -24,7 +24,8 @@ class TestNoise(unittest.TestCase):
         TM_params = jnp.ones(shape=(100, 6))
         tm_noise_single_link = gwr.single_link_TM_acceleration_noise_variance(
             freqs,
-            TM_acceleration_parameters=TM_params,  # Should be length 6 (for each of the arms)
+            TM_acceleration_parameters=TM_params,  # Should be length 6 (for each of
+            # the arms)
             arms_matrix_rescaled=lisa.detector_arms(time_in_years=time_in_years)
             / lisa.armlength,
             x_vector=lisa.x(freqs),

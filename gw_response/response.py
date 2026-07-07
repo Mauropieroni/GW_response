@@ -124,7 +124,7 @@ class Response(object):
     ):
         quadratic_integrated = {}
         for p in polarization:
-            ### Computes the integral for the TDI variable
+            # Computes the integral for the TDI variable
             quadratic_integrated[2 * p] = quadratic_response_integrated(
                 quadratic_integrand[TDI][2 * p]
             )
@@ -157,7 +157,7 @@ class Response(object):
             polarization=polarization,
         )
 
-        ### Computes the integral for the TDI variable
+        # Computes the integral for the TDI variable
         self.quadratic_integrand[TDI] = self.get_quadratic_integrand(
             times_in_years,
             self.single_link_response,
@@ -166,7 +166,7 @@ class Response(object):
             polarization=polarization,
         )
 
-        ### Computes the integral for the TDI variable
+        # Computes the integral for the TDI variable
         self.quadratic_integrated[TDI] = self.get_quadratic_integrated(
             self.quadratic_integrand, TDI=TDI, polarization=polarization
         )

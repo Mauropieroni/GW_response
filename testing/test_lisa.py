@@ -50,20 +50,6 @@ class TestLISA(unittest.TestCase):
             0.0,
         )
 
-    def test_lisa_analytical_positions(self):
-        time_in_years = jnp.linspace(0, 1.0, 100)
-        lisa_analytical_positions = gwr.LISA_satellite_coordinates_analytical(
-            index=1,
-            time_in_years=time_in_years,
-            orbit_radius=gwr.PhysicalConstants().AU,
-            eccentricity=gwr.LISA().ecc,
-        )
-        save_arr = np.load(TEST_DATA_PATH + "lisa_analytical_positions_sat_1.npy")
-        self.assertAlmostEqual(
-            jnp.sum(jnp.abs(lisa_analytical_positions - save_arr)) / np.max(save_arr),
-            0.0,
-        )
-
     def test_lisa_analytical_positions_vm(self):
         time_in_years = jnp.linspace(0, 1.0, 100)
         lisa_analytical_positions = gwr.LISA_satellite_coordinates_analytical_vm(

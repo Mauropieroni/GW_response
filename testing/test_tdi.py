@@ -102,7 +102,6 @@ class TestTDI(unittest.TestCase):
     def test_TDI_projection(self):
         lisa = gwr.LISA()
         freqs = jnp.logspace(-5, 0, 300)
-        time_in_years = jnp.linspace(0, 1.0, 100)
         pixel = gwr.Pixel()
         theta, phi = pixel.theta_pixel, pixel.phi_pixel
         unit_vector = gwr.unit_vec(theta, phi)
