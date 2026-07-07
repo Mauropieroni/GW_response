@@ -1,9 +1,13 @@
 # Global imports
+import chex
 import jax
 import jax.numpy as jnp
+from dataclasses import field
 
 # Local imports
-from .tdi import tdi_matrix
+from .constants import PhysicalConstants
+from .lisa import LISA
+from .tdi import tdi_matrix, TDI_map
 from .utils import arm_length_exponential
 
 # Update jax configuration to enable 64-bit precision for numerical computations
@@ -11,7 +15,6 @@ jax.config.update("jax_enable_x64", True)
 # jax.checking_leaks = True
 
 
-@jax.jit
 def LISA_acceleration_noise(frequency, acc_param=3.0):
     """
     This compute the acceleration noise spectrum in frequency for a
@@ -27,9 +30,9 @@ def LISA_acceleration_noise(frequency, acc_param=3.0):
     acceleration_noise : np.array (of floats)
     """
 
-    first = 1 + (4e-4 / frequency) ** 2
-    second = 1 + (frequency / 8e-3) ** 4
-    third = (2 * jnp.pi * frequency) ** (-4) * (2 * jnp.pi * frequency / 3e8) ** 2
+    first = 1.0 + (4e-4 / frequency) ** 2
+    second = 1.0 + (frequency / 8e-3) ** 4
+    third = (2.0 * jnp.pi * frequency) ** (-4) * (2.0 * jnp.pi * frequency / 3e8) ** 2
     # TODO: Change 3e8 to ps.light_speed
     return acc_param**2 * 1e-30 * first * second * third
 
@@ -49,13 +52,12 @@ def LISA_interferometric_noise(frequency, inter_param=15.0):
     interferometric_noise : np.array (of floats)
     """
 
-    first = 1 + (2e-3 / frequency) ** 4
-    second = (2 * jnp.pi * frequency / 3e8) ** 2
+    first = 1.0 + (2e-3 / frequency) ** 4
+    second = (2.0 * jnp.pi * frequency / 3e8) ** 2
 
     return inter_param**2 * 1e-24 * first * second
 
 
-@jax.jit
 def single_link_TM_acceleration_noise_variance(
     frequency,
     TM_acceleration_parameters,
@@ -126,7 +128,6 @@ def single_link_TM_acceleration_noise_variance(
     return noise_matrix + jnp.roll(cross_matrix, 3, axis=-1)
 
 
-@jax.jit
 def single_link_OMS_noise_variance(
     frequency, OMS_parameters, arms_matrix_rescaled, x_vector
 ):
@@ -142,7 +143,6 @@ def single_link_OMS_noise_variance(
     return jnp.einsum("...ij,k->...kij", parameters_matrix, N_int)
 
 
-@jax.jit
 def tdi_projection(
     TDI_idx,
     single_link_mat,
@@ -165,23 +165,6 @@ def tdi_projection(
     return res
 
 
-@jax.jit
-def _noise_TM_matrix(
-    TDI_idx,
-    frequency,
-    TM_acceleration_parameters,
-    arms_matrix_rescaled,
-    x_vector,
-):
-    """TO ADD."""
-
-    single_link_mat = single_link_TM_acceleration_noise_variance(
-        frequency, TM_acceleration_parameters, arms_matrix_rescaled, x_vector
-    )
-
-    return tdi_projection(TDI_idx, single_link_mat, arms_matrix_rescaled, x_vector)
-
-
 def noise_TM_matrix(
     TDI_idx,
     frequency,
@@ -191,37 +174,18 @@ def noise_TM_matrix(
 ):
     """TO ADD."""
 
-    if (
-        len(TM_acceleration_parameters.shape) != len(arms_matrix_rescaled.shape) - 1
-    ) or (TM_acceleration_parameters.shape[-1] != arms_matrix_rescaled.shape[-1]):
-        raise ValueError(
-            "TM_acceleration_parameters and arms_matrix_rescaled"
-            + " do not have compatible shapes",
-            TM_acceleration_parameters.shape,
-            arms_matrix_rescaled.shape,
-        )
+    # if (
+    #     len(TM_acceleration_parameters.shape) != len(arms_matrix_rescaled.shape) - 1
+    # ) or (TM_acceleration_parameters.shape[-1] != arms_matrix_rescaled.shape[-1]):
+    #     raise ValueError(
+    #         "TM_acceleration_parameters and arms_matrix_rescaled"
+    #         + " do not have compatible shapes",
+    #         TM_acceleration_parameters.shape,
+    #         arms_matrix_rescaled.shape,
+    #     )
 
-    return _noise_TM_matrix(
-        TDI_idx,
-        frequency,
-        TM_acceleration_parameters,
-        arms_matrix_rescaled,
-        x_vector,
-    )
-
-
-@jax.jit
-def _noise_OMS_matrix(
-    TDI_idx,
-    frequency,
-    OMS_parameters,
-    arms_matrix_rescaled,
-    x_vector,
-):
-    """TO ADD."""
-
-    single_link_mat = single_link_OMS_noise_variance(
-        frequency, OMS_parameters, arms_matrix_rescaled, x_vector
+    single_link_mat = single_link_TM_acceleration_noise_variance(
+        frequency, TM_acceleration_parameters, arms_matrix_rescaled, x_vector
     )
 
     return tdi_projection(TDI_idx, single_link_mat, arms_matrix_rescaled, x_vector)
@@ -236,19 +200,21 @@ def noise_OMS_matrix(
 ):
     """TO ADD."""
 
-    if (len(OMS_parameters.shape) != len(arms_matrix_rescaled.shape) - 1) or (
-        OMS_parameters.shape[-1] != arms_matrix_rescaled.shape[-1]
-    ):
-        raise ValueError(
-            "OMS_parameters and arms_matrix_rescaled"
-            + " do not have compatible shapes",
-            OMS_parameters.shape,
-            arms_matrix_rescaled.shape,
-        )
+    # if (len(OMS_parameters.shape) != len(arms_matrix_rescaled.shape) - 1) or (
+    #     OMS_parameters.shape[-1] != arms_matrix_rescaled.shape[-1]
+    # ):
+    #     raise ValueError(
+    #         "OMS_parameters and arms_matrix_rescaled"
+    #         + " do not have compatible shapes",
+    #         OMS_parameters.shape,
+    #         arms_matrix_rescaled.shape,
+    #     )
 
-    return _noise_OMS_matrix(
-        TDI_idx, frequency, OMS_parameters, arms_matrix_rescaled, x_vector
+    single_link_mat = single_link_OMS_noise_variance(
+        frequency, OMS_parameters, arms_matrix_rescaled, x_vector
     )
+
+    return tdi_projection(TDI_idx, single_link_mat, arms_matrix_rescaled, x_vector)
 
 
 def noise_matrix(
@@ -269,3 +235,107 @@ def noise_matrix(
     ) + noise_OMS_matrix(
         TDI_idx, frequency, OMS_parameters, arms_matrix_rescaled, x_vector
     )
+
+
+@chex.dataclass
+class Noise(object):
+    """
+    A wrapper around the noise functions in this module that ties them to a
+    detector, mirroring the way Response wraps the single_link/tdi functions.
+    """
+
+    ps: chex.dataclass = PhysicalConstants()
+    det: chex.dataclass = field(default_factory=lambda: LISA())
+    TM_noise_matrix = {}
+    OMS_noise_matrix = {}
+    noise_matrix = {}
+
+    def get_arms_and_x(self, times_in_years, frequency_array):
+        arms_matrix_rescaled = (
+            self.det.detector_arms(times_in_years) / self.det.armlength
+        )
+        x_vector = self.det.x(frequency_array)
+        return arms_matrix_rescaled, x_vector
+
+    def get_single_link_TM_noise(
+        self, times_in_years, frequency_array, TM_acceleration_parameters
+    ):
+        arms_matrix_rescaled, x_vector = self.get_arms_and_x(
+            times_in_years, frequency_array
+        )
+        return single_link_TM_acceleration_noise_variance(
+            frequency_array,
+            TM_acceleration_parameters,
+            arms_matrix_rescaled,
+            x_vector,
+        )
+
+    def get_single_link_OMS_noise(
+        self, times_in_years, frequency_array, OMS_parameters
+    ):
+        arms_matrix_rescaled, x_vector = self.get_arms_and_x(
+            times_in_years, frequency_array
+        )
+        return single_link_OMS_noise_variance(
+            frequency_array, OMS_parameters, arms_matrix_rescaled, x_vector
+        )
+
+    def get_TM_noise_matrix(
+        self,
+        times_in_years,
+        frequency_array,
+        TM_acceleration_parameters,
+        TDI="XYZ",
+    ):
+        arms_matrix_rescaled, x_vector = self.get_arms_and_x(
+            times_in_years, frequency_array
+        )
+        return noise_TM_matrix(
+            TDI_map[TDI],
+            frequency_array,
+            TM_acceleration_parameters,
+            arms_matrix_rescaled,
+            x_vector,
+        )
+
+    def get_OMS_noise_matrix(
+        self,
+        times_in_years,
+        frequency_array,
+        OMS_parameters,
+        TDI="XYZ",
+    ):
+        arms_matrix_rescaled, x_vector = self.get_arms_and_x(
+            times_in_years, frequency_array
+        )
+        return noise_OMS_matrix(
+            TDI_map[TDI],
+            frequency_array,
+            OMS_parameters,
+            arms_matrix_rescaled,
+            x_vector,
+        )
+
+    def compute_detector(
+        self,
+        times_in_years,
+        frequency_array,
+        TM_acceleration_parameters,
+        OMS_parameters,
+        TDI="XYZ",
+    ):
+        self.TM_noise_matrix[TDI] = self.get_TM_noise_matrix(
+            times_in_years,
+            frequency_array,
+            TM_acceleration_parameters,
+            TDI=TDI,
+        )
+
+        self.OMS_noise_matrix[TDI] = self.get_OMS_noise_matrix(
+            times_in_years,
+            frequency_array,
+            OMS_parameters,
+            TDI=TDI,
+        )
+
+        self.noise_matrix[TDI] = self.TM_noise_matrix[TDI] + self.OMS_noise_matrix[TDI]
