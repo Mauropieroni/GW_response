@@ -1,6 +1,7 @@
 # Global imports
 import jax
 import jax.numpy as jnp
+import numpy as np
 
 import chex
 from functools import partial
@@ -278,23 +279,122 @@ def LISA_arms_matrix_analytical(time_in_years, orbit_radius, eccentricity):
     ).T
 
 
-LISA_orbits_map = {
-    "analytic": 0,
-    # "numeric": 1,
-}
+def load_numerical_orbits(orbit_file):
+    """
+    Loads numerical LISA satellite orbit data from an external file.
 
-LISA_positions_functions = [
-    LISA_satellite_coordinates_analytical_vm,
-    # LISA_satellite_coordinates_numerical_vm,
-]
-LISA_arms_functions = [
-    LISA_arms_matrix_analytical,  # arms_matrix_numerical
-]
+    The file is expected to be readable by `numpy.loadtxt` and to contain 10
+    columns: time_in_years, x1, y1, z1, x2, y2, z2, x3, y3, z3, where
+    (xi, yi, zi) are the coordinates (in meters) of satellite i at the given
+    time. One row per time sample, with rows sorted by increasing time.
+
+    Args:
+        orbit_file (str): Path to the numerical orbit data file.
+
+    Returns:
+        tuple: A tuple (time_grid, positions_grid) where time_grid is a
+        jnp.ndarray of shape (N,) holding the time samples (in years) and
+        positions_grid is a jnp.ndarray of shape (N, 3, 3) holding the
+        satellite positions, indexed as [time, satellite, coordinate].
+    """
+    data = np.atleast_2d(np.loadtxt(orbit_file))
+    if data.shape[1] != 10:
+        raise ValueError(
+            "Numerical orbit files must have 10 columns: time_in_years, x1, "
+            "y1, z1, x2, y2, z2, x3, y3, z3. Got "
+            f"{data.shape[1]} columns instead."
+        )
+    time_grid = jnp.array(data[:, 0])
+    positions_grid = jnp.array(data[:, 1:]).reshape(data.shape[0], 3, 3)
+    return time_grid, positions_grid
+
+
+@jax.jit
+def LISA_satellite_coordinates_numerical(
+    index, time_in_years, time_grid, positions_grid
+):
+    """
+    Computes the coordinates of a LISA satellite by interpolating numerical
+    orbit data.
+
+    This function linearly interpolates, at the requested times, the
+    satellite positions loaded from an external orbit file (see
+    `load_numerical_orbits`). It mirrors the signature of
+    `LISA_satellite_coordinates_analytical` so that both orbit models can be
+    used interchangeably.
+
+    Args:
+        index (int): The index of the LISA satellite (1, 2, or 3).
+        time_in_years (float or jnp.ndarray): Time(s) in years at which to
+        interpolate the satellite's position. Values outside the range
+        covered by `time_grid` are clamped to the boundary values.
+        time_grid (jnp.ndarray): The time samples (in years) of the loaded
+        orbit data, shape (N,).
+        positions_grid (jnp.ndarray): The loaded satellite positions, shape
+        (N, 3, 3), indexed as [time, satellite, coordinate].
+
+    Returns:
+        jnp.ndarray: The x, y, z coordinates of the requested satellite at the
+        requested time(s).
+    """
+    satellite_positions = positions_grid[:, index - 1, :]
+    return jnp.array(
+        [
+            jnp.interp(time_in_years, time_grid, satellite_positions[:, 0]),
+            jnp.interp(time_in_years, time_grid, satellite_positions[:, 1]),
+            jnp.interp(time_in_years, time_grid, satellite_positions[:, 2]),
+        ]
+    )
+
+
+LISA_satellite_coordinates_numerical_vm = jax.vmap(
+    LISA_satellite_coordinates_numerical, in_axes=(0, None, None, None)
+)
+
+
+@jax.jit
+def LISA_arms_matrix_numerical(time_in_years, time_grid, positions_grid):
+    """
+    Computes the arm matrix for the LISA constellation from numerical orbit
+    data, by interpolating satellite positions and taking their differences.
+
+    Args:
+        time_in_years (float or jnp.ndarray): Time(s) in years at which to
+        calculate the arm matrix.
+        time_grid (jnp.ndarray): The time samples (in years) of the loaded
+        orbit data, shape (N,).
+        positions_grid (jnp.ndarray): The loaded satellite positions, shape
+        (N, 3, 3), indexed as [time, satellite, coordinate].
+
+    Returns:
+        jnp.ndarray: A numpy array representing the arm matrix of the LISA
+        constellation. Each row of the array corresponds to the vector
+        difference between pairs of LISA satellites.
+    """
+    m1, m2, m3 = LISA_satellite_coordinates_numerical_vm(
+        jnp.array([1, 2, 3]), time_in_years, time_grid, positions_grid
+    )
+
+    return jnp.array(
+        [
+            m2 - m1,
+            m3 - m2,
+            m1 - m3,
+            m1 - m2,
+            m2 - m3,
+            m3 - m1,
+        ]
+    ).T
 
 
 @partial(jax.jit, static_argnums=(3,))
 def LISA_satellite_positions(
-    time_in_years, orbit_radius, eccentricity, which_orbits="analytic"
+    time_in_years,
+    orbit_radius,
+    eccentricity,
+    which_orbits="analytic",
+    orbit_time_grid=None,
+    orbit_positions_grid=None,
 ):
     """
     Calculates the positions of LISA satellites based on the specified orbit
@@ -303,31 +403,49 @@ def LISA_satellite_positions(
     Args:
         time_in_years (float): The time in years for which the positions are to
         be calculated.
-        orbit_radius (float): The radius of the satellites' orbits.
-        eccentricity (float): The eccentricity of the satellites' orbits.
-        which_orbits (str, optional): The orbit model to be used. Default is
-        'analytic'.
+        orbit_radius (float): The radius of the satellites' orbits. Only used
+        when `which_orbits` is 'analytic'.
+        eccentricity (float): The eccentricity of the satellites' orbits. Only
+        used when `which_orbits` is 'analytic'.
+        which_orbits (str, optional): The orbit model to be used, either
+        'analytic' or 'numeric'. Default is 'analytic'.
+        orbit_time_grid (jnp.ndarray, optional): Time samples (in years) of a
+        numerical orbit, as returned by `load_numerical_orbits`. Required when
+        `which_orbits` is 'numeric'.
+        orbit_positions_grid (jnp.ndarray, optional): Satellite positions of a
+        numerical orbit, as returned by `load_numerical_orbits`. Required when
+        `which_orbits` is 'numeric'.
 
     Returns:
         jnp.ndarray: A numpy array representing the positions of the LISA
         satellites. Each row corresponds to the position of a satellite.
 
     This function allows for the selection of different orbit models to
-    accommodate various analytical and simulation needs.
+    accommodate various analytical and simulation needs. Because `which_orbits`
+    is a static argument, the branch selection happens at trace time, so the
+    two orbit models can have different data requirements.
     """
-    return jax.lax.switch(
-        LISA_orbits_map[which_orbits],
-        LISA_positions_functions,
-        jnp.array([1, 2, 3]),
-        time_in_years,
-        orbit_radius,
-        eccentricity,
-    ).T
+    if which_orbits == "analytic":
+        return LISA_satellite_coordinates_analytical_vm(
+            jnp.array([1, 2, 3]), time_in_years, orbit_radius, eccentricity
+        ).T
+    elif which_orbits == "numeric":
+        return LISA_satellite_coordinates_numerical_vm(
+            jnp.array([1, 2, 3]), time_in_years, orbit_time_grid, orbit_positions_grid
+        ).T
+    raise ValueError(
+        f"Unknown orbit model '{which_orbits}'. Must be 'analytic' or 'numeric'."
+    )
 
 
 @partial(jax.jit, static_argnums=(3,))
 def LISA_arms_matrix(
-    time_in_years, orbit_radius, eccentricity, which_orbits="analytic"
+    time_in_years,
+    orbit_radius,
+    eccentricity,
+    which_orbits="analytic",
+    orbit_time_grid=None,
+    orbit_positions_grid=None,
 ):
     """
     Computes the arm matrix for the LISA constellation based on a specified
@@ -336,10 +454,18 @@ def LISA_arms_matrix(
     Args:
         time_in_years (float): The time in years at which to calculate the arm
         matrix.
-        orbit_radius (float): The radius of the satellite's orbit.
-        eccentricity (float): The eccentricity of the satellite's orbit.
-        which_orbits (str, optional): The orbit model to be used. Default is
-        'analytic'.
+        orbit_radius (float): The radius of the satellite's orbit. Only used
+        when `which_orbits` is 'analytic'.
+        eccentricity (float): The eccentricity of the satellite's orbit. Only
+        used when `which_orbits` is 'analytic'.
+        which_orbits (str, optional): The orbit model to be used, either
+        'analytic' or 'numeric'. Default is 'analytic'.
+        orbit_time_grid (jnp.ndarray, optional): Time samples (in years) of a
+        numerical orbit, as returned by `load_numerical_orbits`. Required when
+        `which_orbits` is 'numeric'.
+        orbit_positions_grid (jnp.ndarray, optional): Satellite positions of a
+        numerical orbit, as returned by `load_numerical_orbits`. Required when
+        `which_orbits` is 'numeric'.
 
     Returns:
         jnp.ndarray: A numpy array representing the arm matrix of the LISA
@@ -348,12 +474,14 @@ def LISA_arms_matrix(
     This function provides flexibility in simulating the LISA constellation by
     allowing the selection of different orbit models.
     """
-    return jax.lax.switch(
-        LISA_orbits_map[which_orbits],
-        LISA_arms_functions,
-        time_in_years,
-        orbit_radius,
-        eccentricity,
+    if which_orbits == "analytic":
+        return LISA_arms_matrix_analytical(time_in_years, orbit_radius, eccentricity)
+    elif which_orbits == "numeric":
+        return LISA_arms_matrix_numerical(
+            time_in_years, orbit_time_grid, orbit_positions_grid
+        )
+    raise ValueError(
+        f"Unknown orbit model '{which_orbits}'. Must be 'analytic' or 'numeric'."
     )
 
 
@@ -380,6 +508,11 @@ class LISA(Detector):
         deg (float): The angular displacement of LISA after Earth, set to 20
         degrees.
         res (float): The expected resolution of LISA, set to 1e-6.
+        which_orbits (str): The orbit model to use, either 'analytic' or
+        'numeric'. Default is 'analytic'.
+        orbit_file (str): Path to a file with numerical orbit data (see
+        `load_numerical_orbits`). Required when `which_orbits` is 'numeric',
+        ignored otherwise.
 
     The class provides methods for initializing the configuration and generating
     a frequency vector for analysis.
@@ -393,6 +526,7 @@ class LISA(Detector):
     deg: float = 20
     res: float = 1e-6
     which_orbits: str = "analytic"
+    orbit_file: str = None
 
     def __post_init__(self):
         """
@@ -402,7 +536,9 @@ class LISA(Detector):
         This method is invoked automatically after the class is instantiated.
         It computes the observational period of LISA, the orbit eccentricity,
         and the characteristic frequency of LISA based on the provided
-        configuration settings.
+        configuration settings. If `which_orbits` is 'numeric', it also loads
+        the numerical orbit data (time samples and satellite positions) from
+        `orbit_file`.
 
         The observational period is calculated as three times the duration of a
         year, derived from the PhysicalConstants class. The orbit eccentricity
@@ -413,6 +549,18 @@ class LISA(Detector):
         self.obs = 3 * self.ps.yr
         self.ecc = self.armlength / (2 * self.ps.AU * jnp.sqrt(3))
         self._f_star = self.ps.light_speed / (2 * jnp.pi * self.armlength)
+
+        self.orbit_time_grid = None
+        self.orbit_positions_grid = None
+        if self.which_orbits == "numeric":
+            if self.orbit_file is None:
+                raise ValueError(
+                    "which_orbits='numeric' requires an orbit_file pointing to "
+                    "the numerical orbit data."
+                )
+            self.orbit_time_grid, self.orbit_positions_grid = load_numerical_orbits(
+                self.orbit_file
+            )
 
     def frequency_vec(self, freq_pts):
         """
@@ -481,7 +629,12 @@ class LISA(Detector):
             else time_in_years
         )
         return LISA_satellite_positions(
-            time_in_years, self.ps.AU, self.ecc, self.which_orbits
+            time_in_years,
+            self.ps.AU,
+            self.ecc,
+            self.which_orbits,
+            self.orbit_time_grid,
+            self.orbit_positions_grid,
         )
 
     def detector_arms(self, time_in_years):
@@ -505,4 +658,11 @@ class LISA(Detector):
             else time_in_years
         )
 
-        return LISA_arms_matrix(time_in_years, self.ps.AU, self.ecc, self.which_orbits)
+        return LISA_arms_matrix(
+            time_in_years,
+            self.ps.AU,
+            self.ecc,
+            self.which_orbits,
+            self.orbit_time_grid,
+            self.orbit_positions_grid,
+        )

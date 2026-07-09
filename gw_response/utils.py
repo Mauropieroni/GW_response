@@ -1,9 +1,7 @@
 # Global imports
-import os
 import jax
 import jax.numpy as jnp
 import chex
-import numpy as np
 import jax_healpy as hp
 
 # Update jax configuration to enable 64-bit precision for numerical computations
@@ -149,15 +147,3 @@ def shift_to_center(first, second, third):
     third_mass = third - center
 
     return first_mass, second_mass, third_mass
-
-
-def coordinates_numerical(*args, **kwargs):
-    path = os.path.dirname(os.path.abspath(__file__))
-    data = jnp.array(np.loadtxt(path + "/input_data/test_positions.txt"))
-    return jnp.reshape(data, (data.shape[0], 3, 3)).T
-
-
-def arms_matrix_numerical(*args, **kwargs):
-    path = os.path.dirname(os.path.abspath(__file__))
-    data = np.loadtxt(path + "/input_data/test_armlengths.txt")
-    return jnp.reshape(data, (data.shape[0], 3, 6))
