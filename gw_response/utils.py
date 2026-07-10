@@ -1,7 +1,10 @@
 # Global imports
 import os
+from typing import Tuple
+
 import jax
 import jax.numpy as jnp
+from jax.typing import ArrayLike
 import chex
 import numpy as np
 import jax_healpy as hp
@@ -18,14 +21,14 @@ class Pixel:
 
     Attributes:
         NSIDE (int): The number of sides of each pixel in the HEALPix
-        pixelization. Default is 8.
+            pixelization. Default is 8.
         NPIX (int): The total number of pixels, computed based on NSIDE.
-        angular_map (jnp.ndarray): An array representing the angular position
-        of each pixel.
-        theta_pixel (jnp.ndarray): An array of theta (colatitude) values for
-        each pixel.
-        phi_pixel (jnp.ndarray): An array of phi (longitude) values for each
-        pixel.
+        angular_map (jax.Array): An array representing the angular position
+            of each pixel.
+        theta_pixel (jax.Array): An array of theta (colatitude) values for
+            each pixel.
+        phi_pixel (jax.Array): An array of phi (longitude) values for each
+            pixel.
 
     The class automatically computes the pixelization upon instantiation or when
     the NSIDE value is changed.
@@ -33,11 +36,11 @@ class Pixel:
 
     NSIDE: int = 8
     NPIX: int = None
-    angular_map: jnp.ndarray = None
-    theta_pixel: jnp.ndarray = None
-    phi_pixel: jnp.ndarray = None
+    angular_map: jax.Array = None
+    theta_pixel: jax.Array = None
+    phi_pixel: jax.Array = None
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         """
         Post-initialization method to compute the pixelization of the sky.
 
@@ -52,16 +55,16 @@ class Pixel:
             self.phi_pixel,
         ) = self.compute_pixelisation()
 
-    def compute_pixelisation(self):
+    def compute_pixelisation(self) -> Tuple[int, jax.Array, jax.Array, jax.Array]:
         """
         Computes the pixelization parameters of the sky.
 
         Returns:
             tuple: A tuple containing:
                 - NPIX (int): The total number of pixels.
-                - angular_map (jnp.ndarray): The angular map array.
-                - theta_pixel (jnp.ndarray): The theta values for each pixel.
-                - phi_pixel (jnp.ndarray): The phi values for each pixel.
+                - angular_map (jax.Array): The angular map array.
+                - theta_pixel (jax.Array): The theta values for each pixel.
+                - phi_pixel (jax.Array): The phi values for each pixel.
         """
         NPIX = hp.nside2npix(self.NSIDE)
         angular_map = jnp.array(
@@ -71,7 +74,7 @@ class Pixel:
         phi_pixel = jnp.array(angular_map[:, 1])
         return NPIX, angular_map, theta_pixel, phi_pixel
 
-    def change_NSIDE(self, NSIDE):
+    def change_NSIDE(self, NSIDE: int) -> None:
         """
         Changes the NSIDE attribute and recomputes the pixelization parameters.
 
@@ -91,7 +94,9 @@ class Pixel:
 
 
 @jax.jit
-def arm_length_exponential(arms_matrix_rescaled, x_vector):
+def arm_length_exponential(
+    arms_matrix_rescaled: ArrayLike, x_vector: ArrayLike
+) -> jax.Array:
     """
     Compute the exponential factor for the Time Delay Interferometry (TDI).
 
@@ -121,7 +126,9 @@ def arm_length_exponential(arms_matrix_rescaled, x_vector):
 
 
 @jax.jit
-def shift_to_center(first, second, third):
+def shift_to_center(
+    first: ArrayLike, second: ArrayLike, third: ArrayLike
+) -> Tuple[jax.Array, jax.Array, jax.Array]:
     """
     Adjusts the positions of three points (or vectors) so that their barycenter
     is at the origin.
@@ -137,8 +144,8 @@ def shift_to_center(first, second, third):
 
     Returns:
         tuple: A tuple of three jnp.ndarrays representing the adjusted
-        coordinates of the first, second, and third points (or vectors),
-        respectively.
+            coordinates of the first, second, and third points (or vectors),
+            respectively.
 
     Each output array has the same shape as the input arrays, and their
     collective barycenter is shifted to the origin.
@@ -151,13 +158,47 @@ def shift_to_center(first, second, third):
     return first_mass, second_mass, third_mass
 
 
-def coordinates_numerical(*args, **kwargs):
+def coordinates_numerical(*args, **kwargs) -> jax.Array:
+    """
+    Loads pre-computed satellite coordinates from disk.
+
+    This is a numerical fallback used for testing: instead of evaluating an
+    analytical orbit model, it reads previously tabulated satellite positions
+    from ``input_data/test_positions.txt``.
+
+    Args:
+            *args: Ignored. Present so this function is interchangeable with the
+            analytical position functions it substitutes for.
+            **kwargs: Ignored. Present for the same reason as ``*args``.
+
+    Returns:
+        jax.Array: An array of shape (3, 3, configurations) with the
+            satellite coordinates, laid out as vectorial_index, satellite, time,
+            matching the output of the analytical position functions.
+    """
     path = os.path.dirname(os.path.abspath(__file__))
     data = jnp.array(np.loadtxt(path + "/input_data/test_positions.txt"))
     return jnp.reshape(data, (data.shape[0], 3, 3)).T
 
 
-def arms_matrix_numerical(*args, **kwargs):
+def arms_matrix_numerical(*args, **kwargs) -> jax.Array:
+    """
+    Loads pre-computed detector arm lengths from disk.
+
+    This is a numerical fallback used for testing: instead of evaluating an
+    analytical orbit model, it reads previously tabulated arm-length data
+    from ``input_data/test_armlengths.txt``.
+
+    Args:
+            *args: Ignored. Present so this function is interchangeable with the
+            analytical arm-matrix functions it substitutes for.
+            **kwargs: Ignored. Present for the same reason as ``*args``.
+
+    Returns:
+        jax.Array: An array of shape (configurations, 3, 6) with the arm
+            matrix, matching the output layout of the analytical arm-matrix
+            functions (dimensions: configurations, vectorial_index, arms).
+    """
     path = os.path.dirname(os.path.abspath(__file__))
     data = np.loadtxt(path + "/input_data/test_armlengths.txt")
     return jnp.reshape(data, (data.shape[0], 3, 6))
