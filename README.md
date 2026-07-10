@@ -4,7 +4,7 @@
 
 A jit-enhanced python code to compute the response function of a GW interferometer.
 
-**Release:** v1.0.0 available now. Tested on python 3.8, 3.9, 3.10, and 3.11.
+**Release:** v1.0.0 available now. Tested on python 3.10, 3.11, 3.12, and 3.13.
 
 **Current status:** Under active development
 
