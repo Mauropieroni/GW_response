@@ -149,6 +149,41 @@ class TestNoise(unittest.TestCase):
             0.0,
         )
 
+    def test_noise_class(self):
+        freqs = jnp.logspace(-5, 0, 300)
+        time_in_years = jnp.linspace(0, 1.0, 100)
+        TM_params = jnp.ones(shape=(100, 6))
+        OMS_params = jnp.ones(shape=(100, 6))
+
+        noise = gwr.Noise(
+            ps=gwr.PhysicalConstants(),
+            det=gwr.LISA(),
+            frequency_array=freqs,
+        )
+
+        noise.compute_detector(
+            times_in_years=time_in_years,
+            TM_acceleration_parameters=TM_params,
+            OMS_parameters=OMS_params,
+            TDI="XYZ",
+        )
+
+        save_arr = np.load(TEST_DATA_PATH + "tm_tdi_matrix.npy")
+        self.assertAlmostEqual(
+            jnp.sum(jnp.abs(noise.TM_noise_matrix["XYZ"] - save_arr)),
+            0.0,
+        )
+        save_arr = np.load(TEST_DATA_PATH + "oms_tdi_matrix.npy")
+        self.assertAlmostEqual(
+            jnp.sum(jnp.abs(noise.OMS_noise_matrix["XYZ"] - save_arr)),
+            0.0,
+        )
+        save_arr = np.load(TEST_DATA_PATH + "noise_matrix.npy")
+        self.assertAlmostEqual(
+            jnp.sum(jnp.abs(noise.noise_matrix["XYZ"] - save_arr)),
+            0.0,
+        )
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
