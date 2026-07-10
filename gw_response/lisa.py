@@ -2,6 +2,7 @@
 import jax
 import jax.numpy as jnp
 import numpy as np
+import interpax
 
 import chex
 from functools import partial
@@ -263,39 +264,277 @@ def LISA_arms_matrix_analytical(time_in_years, orbit_radius, eccentricity):
         eccentricity,
     )
 
-    fa1 = 1  # + 0.01 * jnp.sin(2 * jnp.pi * time_in_years)
-    fa2 = 1  # + 0.01 * jnp.sin(2 * jnp.pi * time_in_years + 2 * jnp.pi / 3)
-    fa3 = 1  # + 0.01 * jnp.sin(2 * jnp.pi * time_in_years + 4 * jnp.pi / 3)
-
     return jnp.array(
         [
-            fa1 * (m2 - m1),
-            fa2 * (m3 - m2),
-            fa3 * (m1 - m3),
-            fa1 * (m1 - m2),
-            fa2 * (m2 - m3),
-            fa3 * (m3 - m1),
+            (m2 - m1),
+            (m3 - m2),
+            (m1 - m3),
+            (m1 - m2),
+            (m2 - m3),
+            (m3 - m1),
         ]
     ).T
 
 
-def load_numerical_orbits(orbit_file):
+@jax.jit
+def _solve_kepler_equation(mean_anomaly, orbit_eccentricity):
     """
-    Loads numerical LISA satellite orbit data from an external file.
+    Solves the Kepler equation M = E - e*sin(E) for the eccentric anomaly E
+    given the mean anomaly M and the orbit eccentricity e, using
+    Newton-Raphson iterations.
+
+    Note: Martens & Joffre 2021 (arXiv:2101.03040, Eq. 4) state this equation
+    with the opposite sign convention, E + e*sin(E) = M. That convention is
+    only consistent with the standard perifocal position formulas used here
+    (and with the paper's own Table 1 linear-model elements, and with the arm
+    length "breathing" shown in the paper's Fig. 3) if paired with a mirrored
+    perifocal frame; using the standard convention below with the standard
+    formulas reproduces both, so it is used directly instead.
+
+    Args:
+        mean_anomaly (float or jnp.ndarray): The mean anomaly (radians).
+        orbit_eccentricity (float): The orbit eccentricity.
+
+    Returns:
+        jnp.ndarray: The eccentric anomaly solving the Kepler equation above.
+    """
+
+    def newton_step(_, eccentric_anomaly):
+        residual = (
+            eccentric_anomaly
+            - orbit_eccentricity * jnp.sin(eccentric_anomaly)
+            - mean_anomaly
+        )
+        derivative = 1 - orbit_eccentricity * jnp.cos(eccentric_anomaly)
+        return eccentric_anomaly - residual / derivative
+
+    return jax.lax.fori_loop(0, 10, newton_step, mean_anomaly)
+
+
+@jax.jit
+def LISA_keplerian_orbital_elements(
+    index, armlength_ratio, tilt_parameter, initial_clocking_angle
+):
+    """
+    Computes the per-satellite orbital elements (eccentricity, inclination,
+    longitude of the ascending node) of the exact Keplerian cartwheel model
+    of Martens & Joffre 2021 (arXiv:2101.03040), section 2.2, Table 2.
+
+    Unlike `LISA_satellite_coordinates_analytical`, which builds a perfectly
+    rigid (non-flexing) constellation directly in Cartesian coordinates, this
+    model places each satellite on its own heliocentric Keplerian ellipse.
+    The resulting triangle is only approximately equilateral and "breathes"
+    over the course of a year, which is closer to the actual behaviour of
+    LISA.
+
+    Args:
+        index (int): The index of the LISA satellite (1, 2, or 3).
+        armlength_ratio (float): The ratio alpha = armlength / (2 *
+        orbit_radius) between the (nominal) constellation arm length and
+        twice the orbit radius.
+        tilt_parameter (float): The dimensionless inclination parameter
+        delta_1 (delta = alpha * delta_1 in the reference paper). The value
+        5/8 minimizes the arm length flexing in the Keplerian model.
+        initial_clocking_angle (float): The initial clocking angle sigma_0,
+        which sets the orientation of the constellation relative to the
+        Earth at t=0.
+
+    Returns:
+        tuple: (orbit_eccentricity, inclination, ascending_node), the
+        Keplerian orbital elements of the requested satellite. The
+        eccentricity and inclination are the same for all three satellites;
+        only the ascending node differs.
+    """
+    tilt = armlength_ratio * tilt_parameter
+    phase = jnp.pi / 3 + tilt
+    orbit_eccentricity = -1 + jnp.sqrt(
+        1
+        + 4 / 3 * armlength_ratio**2
+        + 4 / jnp.sqrt(3) * armlength_ratio * jnp.cos(phase)
+    )
+    inclination = jnp.arctan2(
+        2 / jnp.sqrt(3) * armlength_ratio * jnp.sin(phase),
+        1 + 2 / jnp.sqrt(3) * armlength_ratio * jnp.cos(phase),
+    )
+    ascending_node = initial_clocking_angle - jnp.pi / 2 + (index - 1) * 2 * jnp.pi / 3
+    return orbit_eccentricity, inclination, ascending_node
+
+
+@jax.jit
+def LISA_satellite_coordinates_keplerian(
+    index,
+    time_in_years,
+    orbit_radius,
+    eccentricity,
+    tilt_parameter=5.0 / 8.0,
+    initial_clocking_angle=0.0,
+    chirality=1.0,
+):
+    """
+    Computes the three-dimensional heliocentric coordinates of a LISA
+    satellite using the exact Keplerian cartwheel model of Martens & Joffre
+    2021 (arXiv:2101.03040), section 2.2.
+
+    Each satellite is placed on its own heliocentric Keplerian ellipse (with
+    elements from `LISA_keplerian_orbital_elements`), and its position is
+    obtained by solving Kepler's equation exactly (via
+    `_solve_kepler_equation`) rather than by an expansion in the constellation
+    arm length as in `LISA_satellite_coordinates_analytical`. Because of this,
+    the resulting triangle is not perfectly rigid: its arm lengths and corner
+    angles "breathe" slightly over a year.
+
+    Args:
+        index (int): The index of the LISA satellite (1, 2, or 3).
+        time_in_years (float or jnp.ndarray): Time in years at which to
+        calculate the satellite's position. The satellites are assumed to
+        complete one heliocentric orbit per year.
+        orbit_radius (float): The (approximate) radius of the satellite's
+        orbit, i.e. its semi-major axis.
+        eccentricity (float): Here this parametrises the ratio between the
+        constellation arm length and the orbit radius (as `LISA().ecc` does
+        for the rigid model), from which the armlength_ratio alpha =
+        sqrt(3) * eccentricity and the actual orbit eccentricity are derived.
+        Kept with this name so this function is interchangeable with
+        `LISA_satellite_coordinates_analytical`.
+        tilt_parameter (float, optional): The dimensionless inclination
+        parameter delta_1. Default is 5/8, which minimizes arm length
+        flexing. See `LISA_keplerian_orbital_elements`.
+        initial_clocking_angle (float, optional): The initial clocking angle
+        sigma_0. Default is 0.0.
+        chirality (float, optional): +1.0 for a counter-clockwise, -1.0 for a
+        clockwise constellation rotation (as seen from ecliptic north).
+        Default is +1.0.
+
+    Returns:
+        jnp.ndarray: A three-dimensional array with the x, y, z coordinates
+        of the specified LISA satellite at the given time(s).
+    """
+    armlength_ratio = jnp.sqrt(3) * eccentricity
+    orbit_eccentricity, inclination, ascending_node = LISA_keplerian_orbital_elements(
+        index, armlength_ratio, tilt_parameter, initial_clocking_angle
+    )
+    argument_of_perihelion = chirality * jnp.pi / 2
+    mean_anomaly = (
+        jnp.pi
+        - initial_clocking_angle
+        - (index - 1) * 2 * jnp.pi / 3
+        + 2 * jnp.pi * jnp.array(time_in_years)
+    )
+    eccentric_anomaly = _solve_kepler_equation(mean_anomaly, orbit_eccentricity)
+    denominator = 1 - orbit_eccentricity * jnp.cos(eccentric_anomaly)
+    radius = orbit_radius * denominator
+    x_perifocal = (
+        radius * (jnp.cos(eccentric_anomaly) - orbit_eccentricity) / denominator
+    )
+    y_perifocal = (
+        radius
+        * jnp.sqrt(1 - orbit_eccentricity**2)
+        * jnp.sin(eccentric_anomaly)
+        / denominator
+    )
+
+    cos_Omega = jnp.cos(ascending_node)
+    sin_Omega = jnp.sin(ascending_node)
+    cos_omega = jnp.cos(argument_of_perihelion)
+    sin_omega = jnp.sin(argument_of_perihelion)
+    cos_i = jnp.cos(inclination)
+    sin_i = jnp.sin(inclination)
+
+    x = (cos_Omega * cos_omega - sin_Omega * sin_omega * cos_i) * x_perifocal - (
+        cos_Omega * sin_omega + sin_Omega * cos_omega * cos_i
+    ) * y_perifocal
+    y = (sin_Omega * cos_omega + cos_Omega * sin_omega * cos_i) * x_perifocal + (
+        cos_Omega * cos_omega * cos_i - sin_Omega * sin_omega
+    ) * y_perifocal
+    z = (sin_omega * sin_i) * x_perifocal + (cos_omega * sin_i) * y_perifocal
+
+    return jnp.array([x, y, z])
+
+
+LISA_satellite_coordinates_keplerian_vm = jax.vmap(
+    LISA_satellite_coordinates_keplerian,
+    in_axes=(0, None, None, None, None, None, None),
+)
+
+
+@jax.jit
+def LISA_arms_matrix_keplerian(
+    time_in_years,
+    orbit_radius,
+    eccentricity,
+    tilt_parameter=5.0 / 8.0,
+    initial_clocking_angle=0.0,
+    chirality=1.0,
+):
+    """
+    Computes the arm matrix for the LISA constellation using the exact
+    Keplerian cartwheel model of Martens & Joffre 2021 (arXiv:2101.03040).
+
+    Args:
+        time_in_years (float or jnp.ndarray): Time(s) in years at which to
+        calculate the arm matrix.
+        orbit_radius (float): The radius of the satellite's orbit.
+        eccentricity (float): See `LISA_satellite_coordinates_keplerian`.
+        tilt_parameter (float, optional): See
+        `LISA_satellite_coordinates_keplerian`. Default is 5/8.
+        initial_clocking_angle (float, optional): See
+        `LISA_satellite_coordinates_keplerian`. Default is 0.0.
+        chirality (float, optional): See
+        `LISA_satellite_coordinates_keplerian`. Default is +1.0.
+
+    Returns:
+        jnp.ndarray: A numpy array representing the arm matrix of the LISA
+        constellation. Each row corresponds to the vector difference between
+        pairs of LISA satellites.
+    """
+    m1, m2, m3 = LISA_satellite_coordinates_keplerian_vm(
+        jnp.array([1, 2, 3]),
+        time_in_years,
+        orbit_radius,
+        eccentricity,
+        tilt_parameter,
+        initial_clocking_angle,
+        chirality,
+    )
+
+    return jnp.array(
+        [
+            m2 - m1,
+            m3 - m2,
+            m1 - m3,
+            m1 - m2,
+            m2 - m3,
+            m3 - m1,
+        ]
+    ).T
+
+
+def load_numerical_orbits(orbit_file, interpolation_method="linear"):
+    """
+    Loads numerical LISA satellite orbit data from an external file and builds
+    an interpolator for the satellite positions.
 
     The file is expected to be readable by `numpy.loadtxt` and to contain 10
     columns: time_in_years, x1, y1, z1, x2, y2, z2, x3, y3, z3, where
     (xi, yi, zi) are the coordinates (in meters) of satellite i at the given
     time. One row per time sample, with rows sorted by increasing time.
 
+    The interpolation coefficients are computed once here (similar in spirit
+    to `scipy.interpolate.interp1d`), so evaluating the returned interpolator
+    at query times - even repeatedly inside a jit/vmap - only needs to
+    evaluate the precomputed spline rather than re-deriving it.
+
     Args:
         orbit_file (str): Path to the numerical orbit data file.
+        interpolation_method (str, optional): The interpolation method passed
+        to `interpax.Interpolator1D`, e.g. 'linear', 'nearest', 'cubic',
+        'cubic2', 'cardinal', 'catmull-rom', 'monotonic', 'monotonic-0', or
+        'akima'. Default is 'linear'.
 
     Returns:
-        tuple: A tuple (time_grid, positions_grid) where time_grid is a
-        jnp.ndarray of shape (N,) holding the time samples (in years) and
-        positions_grid is a jnp.ndarray of shape (N, 3, 3) holding the
-        satellite positions, indexed as [time, satellite, coordinate].
+        interpax.Interpolator1D: An interpolator mapping time (in years) to
+        satellite positions. Calling it with query time(s) returns an array
+        of shape (..., 3, 3), indexed as [satellite, coordinate].
     """
     data = np.atleast_2d(np.loadtxt(orbit_file))
     if data.shape[1] != 10:
@@ -306,65 +545,58 @@ def load_numerical_orbits(orbit_file):
         )
     time_grid = jnp.array(data[:, 0])
     positions_grid = jnp.array(data[:, 1:]).reshape(data.shape[0], 3, 3)
-    return time_grid, positions_grid
+    return interpax.Interpolator1D(
+        time_grid, positions_grid, method=interpolation_method
+    )
 
 
 @jax.jit
-def LISA_satellite_coordinates_numerical(
-    index, time_in_years, time_grid, positions_grid
-):
+def LISA_satellite_coordinates_numerical(index, time_in_years, orbit_interpolator):
     """
-    Computes the coordinates of a LISA satellite by interpolating numerical
-    orbit data.
+    Computes the coordinates of a LISA satellite by evaluating a precomputed
+    interpolator built from numerical orbit data.
 
-    This function linearly interpolates, at the requested times, the
-    satellite positions loaded from an external orbit file (see
-    `load_numerical_orbits`). It mirrors the signature of
-    `LISA_satellite_coordinates_analytical` so that both orbit models can be
-    used interchangeably.
+    This function evaluates, at the requested times, the satellite position
+    interpolator built by `load_numerical_orbits`. It mirrors the signature
+    of `LISA_satellite_coordinates_analytical` so that both orbit models can
+    be used interchangeably.
 
     Args:
         index (int): The index of the LISA satellite (1, 2, or 3).
         time_in_years (float or jnp.ndarray): Time(s) in years at which to
-        interpolate the satellite's position. Values outside the range
-        covered by `time_grid` are clamped to the boundary values.
-        time_grid (jnp.ndarray): The time samples (in years) of the loaded
-        orbit data, shape (N,).
-        positions_grid (jnp.ndarray): The loaded satellite positions, shape
-        (N, 3, 3), indexed as [time, satellite, coordinate].
+        evaluate the satellite's position. Values outside the range covered
+        by the interpolator's time grid are clamped to the boundary values.
+        orbit_interpolator (interpax.Interpolator1D): Interpolator built by
+        `load_numerical_orbits`.
 
     Returns:
         jnp.ndarray: The x, y, z coordinates of the requested satellite at the
         requested time(s).
     """
-    satellite_positions = positions_grid[:, index - 1, :]
-    return jnp.array(
-        [
-            jnp.interp(time_in_years, time_grid, satellite_positions[:, 0]),
-            jnp.interp(time_in_years, time_grid, satellite_positions[:, 1]),
-            jnp.interp(time_in_years, time_grid, satellite_positions[:, 2]),
-        ]
+    clipped_time = jnp.clip(
+        time_in_years, orbit_interpolator.x[0], orbit_interpolator.x[-1]
     )
+    satellite_positions = orbit_interpolator(clipped_time)[..., index - 1, :]
+    return jnp.moveaxis(satellite_positions, -1, 0)
 
 
 LISA_satellite_coordinates_numerical_vm = jax.vmap(
-    LISA_satellite_coordinates_numerical, in_axes=(0, None, None, None)
+    LISA_satellite_coordinates_numerical, in_axes=(0, None, None)
 )
 
 
 @jax.jit
-def LISA_arms_matrix_numerical(time_in_years, time_grid, positions_grid):
+def LISA_arms_matrix_numerical(time_in_years, orbit_interpolator):
     """
     Computes the arm matrix for the LISA constellation from numerical orbit
-    data, by interpolating satellite positions and taking their differences.
+    data, by evaluating the satellite position interpolator and taking
+    differences.
 
     Args:
         time_in_years (float or jnp.ndarray): Time(s) in years at which to
         calculate the arm matrix.
-        time_grid (jnp.ndarray): The time samples (in years) of the loaded
-        orbit data, shape (N,).
-        positions_grid (jnp.ndarray): The loaded satellite positions, shape
-        (N, 3, 3), indexed as [time, satellite, coordinate].
+        orbit_interpolator (interpax.Interpolator1D): Interpolator built by
+        `load_numerical_orbits`.
 
     Returns:
         jnp.ndarray: A numpy array representing the arm matrix of the LISA
@@ -372,7 +604,7 @@ def LISA_arms_matrix_numerical(time_in_years, time_grid, positions_grid):
         difference between pairs of LISA satellites.
     """
     m1, m2, m3 = LISA_satellite_coordinates_numerical_vm(
-        jnp.array([1, 2, 3]), time_in_years, time_grid, positions_grid
+        jnp.array([1, 2, 3]), time_in_years, orbit_interpolator
     )
 
     return jnp.array(
@@ -392,49 +624,73 @@ def LISA_satellite_positions(
     time_in_years,
     orbit_radius,
     eccentricity,
-    which_orbits="analytic",
-    orbit_time_grid=None,
-    orbit_positions_grid=None,
+    orbit_approximant="rigid",
+    orbit_interpolator=None,
+    keplerian_tilt_parameter=5.0 / 8.0,
+    keplerian_initial_clocking_angle=0.0,
+    keplerian_chirality=1.0,
 ):
     """
     Calculates the positions of LISA satellites based on the specified orbit
-    model.
+    approximant.
 
     Args:
         time_in_years (float): The time in years for which the positions are to
         be calculated.
-        orbit_radius (float): The radius of the satellites' orbits. Only used
-        when `which_orbits` is 'analytic'.
-        eccentricity (float): The eccentricity of the satellites' orbits. Only
-        used when `which_orbits` is 'analytic'.
-        which_orbits (str, optional): The orbit model to be used, either
-        'analytic' or 'numeric'. Default is 'analytic'.
-        orbit_time_grid (jnp.ndarray, optional): Time samples (in years) of a
-        numerical orbit, as returned by `load_numerical_orbits`. Required when
-        `which_orbits` is 'numeric'.
-        orbit_positions_grid (jnp.ndarray, optional): Satellite positions of a
-        numerical orbit, as returned by `load_numerical_orbits`. Required when
-        `which_orbits` is 'numeric'.
+        orbit_radius (float): The radius of the satellites' orbits. Not used
+        when `orbit_approximant` is 'numeric'.
+        eccentricity (float): The eccentricity of the satellites' orbits. Not
+        used when `orbit_approximant` is 'numeric'.
+        orbit_approximant (str, optional): The orbit model to be used: 'rigid'
+        (a perfectly rigid, non-flexing constellation, see
+        `LISA_satellite_coordinates_analytical`), 'keplerian' (each satellite
+        on its own heliocentric Keplerian ellipse, see
+        `LISA_satellite_coordinates_keplerian`), or 'numeric' (interpolated
+        from precomputed orbit data). Default is 'rigid'.
+        orbit_interpolator (interpax.Interpolator1D, optional): Interpolator
+        built by `load_numerical_orbits`. Required when `orbit_approximant` is
+        'numeric'.
+        keplerian_tilt_parameter (float, optional): See
+        `LISA_satellite_coordinates_keplerian`. Only used when
+        `orbit_approximant` is 'keplerian'.
+        keplerian_initial_clocking_angle (float, optional): See
+        `LISA_satellite_coordinates_keplerian`. Only used when
+        `orbit_approximant` is 'keplerian'.
+        keplerian_chirality (float, optional): See
+        `LISA_satellite_coordinates_keplerian`. Only used when
+        `orbit_approximant` is 'keplerian'.
 
     Returns:
         jnp.ndarray: A numpy array representing the positions of the LISA
         satellites. Each row corresponds to the position of a satellite.
 
     This function allows for the selection of different orbit models to
-    accommodate various analytical and simulation needs. Because `which_orbits`
-    is a static argument, the branch selection happens at trace time, so the
-    two orbit models can have different data requirements.
+    accommodate various analytical and simulation needs. Because
+    `orbit_approximant` is a static argument, the branch selection happens at
+    trace time, so the different orbit models can have different data
+    requirements.
     """
-    if which_orbits == "analytic":
+    if orbit_approximant == "rigid":
         return LISA_satellite_coordinates_analytical_vm(
             jnp.array([1, 2, 3]), time_in_years, orbit_radius, eccentricity
         ).T
-    elif which_orbits == "numeric":
+    elif orbit_approximant == "keplerian":
+        return LISA_satellite_coordinates_keplerian_vm(
+            jnp.array([1, 2, 3]),
+            time_in_years,
+            orbit_radius,
+            eccentricity,
+            keplerian_tilt_parameter,
+            keplerian_initial_clocking_angle,
+            keplerian_chirality,
+        ).T
+    elif orbit_approximant == "numeric":
         return LISA_satellite_coordinates_numerical_vm(
-            jnp.array([1, 2, 3]), time_in_years, orbit_time_grid, orbit_positions_grid
+            jnp.array([1, 2, 3]), time_in_years, orbit_interpolator
         ).T
     raise ValueError(
-        f"Unknown orbit model '{which_orbits}'. Must be 'analytic' or 'numeric'."
+        f"Unknown orbit approximant '{orbit_approximant}'. Must be 'rigid', "
+        "'keplerian', or 'numeric'."
     )
 
 
@@ -443,29 +699,38 @@ def LISA_arms_matrix(
     time_in_years,
     orbit_radius,
     eccentricity,
-    which_orbits="analytic",
-    orbit_time_grid=None,
-    orbit_positions_grid=None,
+    orbit_approximant="rigid",
+    orbit_interpolator=None,
+    keplerian_tilt_parameter=5.0 / 8.0,
+    keplerian_initial_clocking_angle=0.0,
+    keplerian_chirality=1.0,
 ):
     """
     Computes the arm matrix for the LISA constellation based on a specified
-    orbit model.
+    orbit approximant.
 
     Args:
         time_in_years (float): The time in years at which to calculate the arm
         matrix.
-        orbit_radius (float): The radius of the satellite's orbit. Only used
-        when `which_orbits` is 'analytic'.
-        eccentricity (float): The eccentricity of the satellite's orbit. Only
-        used when `which_orbits` is 'analytic'.
-        which_orbits (str, optional): The orbit model to be used, either
-        'analytic' or 'numeric'. Default is 'analytic'.
-        orbit_time_grid (jnp.ndarray, optional): Time samples (in years) of a
-        numerical orbit, as returned by `load_numerical_orbits`. Required when
-        `which_orbits` is 'numeric'.
-        orbit_positions_grid (jnp.ndarray, optional): Satellite positions of a
-        numerical orbit, as returned by `load_numerical_orbits`. Required when
-        `which_orbits` is 'numeric'.
+        orbit_radius (float): The radius of the satellite's orbit. Not used
+        when `orbit_approximant` is 'numeric'.
+        eccentricity (float): The eccentricity of the satellite's orbit. Not
+        used when `orbit_approximant` is 'numeric'.
+        orbit_approximant (str, optional): The orbit model to be used: 'rigid',
+        'keplerian', or 'numeric'. Default is 'rigid'. See
+        `LISA_satellite_positions` for details.
+        orbit_interpolator (interpax.Interpolator1D, optional): Interpolator
+        built by `load_numerical_orbits`. Required when `orbit_approximant` is
+        'numeric'.
+        keplerian_tilt_parameter (float, optional): See
+        `LISA_satellite_coordinates_keplerian`. Only used when
+        `orbit_approximant` is 'keplerian'.
+        keplerian_initial_clocking_angle (float, optional): See
+        `LISA_satellite_coordinates_keplerian`. Only used when
+        `orbit_approximant` is 'keplerian'.
+        keplerian_chirality (float, optional): See
+        `LISA_satellite_coordinates_keplerian`. Only used when
+        `orbit_approximant` is 'keplerian'.
 
     Returns:
         jnp.ndarray: A numpy array representing the arm matrix of the LISA
@@ -474,14 +739,22 @@ def LISA_arms_matrix(
     This function provides flexibility in simulating the LISA constellation by
     allowing the selection of different orbit models.
     """
-    if which_orbits == "analytic":
+    if orbit_approximant == "rigid":
         return LISA_arms_matrix_analytical(time_in_years, orbit_radius, eccentricity)
-    elif which_orbits == "numeric":
-        return LISA_arms_matrix_numerical(
-            time_in_years, orbit_time_grid, orbit_positions_grid
+    elif orbit_approximant == "keplerian":
+        return LISA_arms_matrix_keplerian(
+            time_in_years,
+            orbit_radius,
+            eccentricity,
+            keplerian_tilt_parameter,
+            keplerian_initial_clocking_angle,
+            keplerian_chirality,
         )
+    elif orbit_approximant == "numeric":
+        return LISA_arms_matrix_numerical(time_in_years, orbit_interpolator)
     raise ValueError(
-        f"Unknown orbit model '{which_orbits}'. Must be 'analytic' or 'numeric'."
+        f"Unknown orbit approximant '{orbit_approximant}'. Must be 'rigid', "
+        "'keplerian', or 'numeric'."
     )
 
 
@@ -508,11 +781,28 @@ class LISA(Detector):
         deg (float): The angular displacement of LISA after Earth, set to 20
         degrees.
         res (float): The expected resolution of LISA, set to 1e-6.
-        which_orbits (str): The orbit model to use, either 'analytic' or
-        'numeric'. Default is 'analytic'.
+        orbit_approximant (str): The orbit model to use: 'rigid' (a perfectly
+        rigid, non-flexing constellation), 'keplerian' (each satellite on its
+        own heliocentric Keplerian ellipse, following Martens & Joffre 2021,
+        arXiv:2101.03040), or 'numeric' (interpolated from precomputed orbit
+        data). Default is 'rigid'.
         orbit_file (str): Path to a file with numerical orbit data (see
-        `load_numerical_orbits`). Required when `which_orbits` is 'numeric',
-        ignored otherwise.
+        `load_numerical_orbits`). Required when `orbit_approximant` is
+        'numeric', ignored otherwise.
+        orbit_interpolation_method (str): The interpolation method used to
+        evaluate the numerical orbit data (see `load_numerical_orbits`), e.g.
+        'linear', 'nearest', 'cubic', 'cubic2', 'cardinal', 'catmull-rom',
+        'monotonic', 'monotonic-0', or 'akima'. Default is 'linear'. Only
+        used when `orbit_approximant` is 'numeric'.
+        keplerian_tilt_parameter (float): Dimensionless inclination parameter
+        delta_1 used by the 'keplerian' orbit approximant. Default is 5/8,
+        which minimizes arm length flexing. Ignored otherwise.
+        keplerian_initial_clocking_angle (float): Initial clocking angle
+        sigma_0 used by the 'keplerian' orbit approximant. Default is 0.0.
+        Ignored otherwise.
+        keplerian_chirality (float): +1.0 for a counter-clockwise, -1.0 for a
+        clockwise constellation rotation, used by the 'keplerian' orbit
+        approximant. Default is +1.0. Ignored otherwise.
 
     The class provides methods for initializing the configuration and generating
     a frequency vector for analysis.
@@ -525,8 +815,12 @@ class LISA(Detector):
     armlength: float = 2.5e9
     deg: float = 20
     res: float = 1e-6
-    which_orbits: str = "analytic"
+    orbit_approximant: str = "rigid"
     orbit_file: str = None
+    orbit_interpolation_method: str = "linear"
+    keplerian_tilt_parameter: float = 5.0 / 8.0
+    keplerian_initial_clocking_angle: float = 0.0
+    keplerian_chirality: float = 1.0
 
     def __post_init__(self):
         """
@@ -536,8 +830,8 @@ class LISA(Detector):
         This method is invoked automatically after the class is instantiated.
         It computes the observational period of LISA, the orbit eccentricity,
         and the characteristic frequency of LISA based on the provided
-        configuration settings. If `which_orbits` is 'numeric', it also loads
-        the numerical orbit data (time samples and satellite positions) from
+        configuration settings. If `orbit_approximant` is 'numeric', it also
+        builds an interpolator over the numerical orbit data loaded from
         `orbit_file`.
 
         The observational period is calculated as three times the duration of a
@@ -550,16 +844,15 @@ class LISA(Detector):
         self.ecc = self.armlength / (2 * self.ps.AU * jnp.sqrt(3))
         self._f_star = self.ps.light_speed / (2 * jnp.pi * self.armlength)
 
-        self.orbit_time_grid = None
-        self.orbit_positions_grid = None
-        if self.which_orbits == "numeric":
+        self.orbit_interpolator = None
+        if self.orbit_approximant == "numeric":
             if self.orbit_file is None:
                 raise ValueError(
-                    "which_orbits='numeric' requires an orbit_file pointing to "
-                    "the numerical orbit data."
+                    "orbit_approximant='numeric' requires an orbit_file "
+                    "pointing to the numerical orbit data."
                 )
-            self.orbit_time_grid, self.orbit_positions_grid = load_numerical_orbits(
-                self.orbit_file
+            self.orbit_interpolator = load_numerical_orbits(
+                self.orbit_file, self.orbit_interpolation_method
             )
 
     def frequency_vec(self, freq_pts):
@@ -614,8 +907,8 @@ class LISA(Detector):
         Args:
             time_in_years (float): The time at which the positions are to be
             calculated, in years.
-            which_orbits (str): The method of orbit calculation, defaulting to
-            'analytic'.
+            orbit_approximant (str): The method of orbit calculation,
+            defaulting to 'rigid'.
 
         Returns:
             The positions of LISA satellites as calculated by the
@@ -632,9 +925,11 @@ class LISA(Detector):
             time_in_years,
             self.ps.AU,
             self.ecc,
-            self.which_orbits,
-            self.orbit_time_grid,
-            self.orbit_positions_grid,
+            self.orbit_approximant,
+            self.orbit_interpolator,
+            self.keplerian_tilt_parameter,
+            self.keplerian_initial_clocking_angle,
+            self.keplerian_chirality,
         )
 
     def detector_arms(self, time_in_years):
@@ -644,8 +939,8 @@ class LISA(Detector):
         Args:
             time_in_years (float): The time at which the arm matrix is to be
             computed, in years.
-            which_orbits (str): The method of orbit calculation, defaulting to
-            'analytic'.
+            orbit_approximant (str): The method of orbit calculation,
+            defaulting to 'rigid'.
 
         Returns:
             The arm matrix of the LISA detector as calculated by the
@@ -662,7 +957,9 @@ class LISA(Detector):
             time_in_years,
             self.ps.AU,
             self.ecc,
-            self.which_orbits,
-            self.orbit_time_grid,
-            self.orbit_positions_grid,
+            self.orbit_approximant,
+            self.orbit_interpolator,
+            self.keplerian_tilt_parameter,
+            self.keplerian_initial_clocking_angle,
+            self.keplerian_chirality,
         )

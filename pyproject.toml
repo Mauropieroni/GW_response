@@ -21,6 +21,7 @@ dependencies = [
     "jax-healpy>=0.7; python_version>='3.11'",
     "jax-healpy>=0.6,<0.7; python_version<'3.11'",
     "typing_extensions>=4.10.0",
+    "interpax>=0.3.0",
 ]
 
 [tool.setuptools.packages.find]
