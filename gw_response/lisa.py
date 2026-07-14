@@ -15,6 +15,18 @@ from .detector import Detector
 jax.config.update("jax_enable_x64", True)
 
 
+def _as_time_array(time_in_years):
+    """
+    Wraps a bare float `time_in_years` into a length-1 jnp array so that
+    downstream orbit functions can always assume an array-like of times.
+    """
+    return (
+        jnp.array([time_in_years])
+        if isinstance(time_in_years, float)
+        else time_in_years
+    )
+
+
 @jax.jit
 def LISA_alpha_par(time_in_years):
     """
@@ -238,6 +250,37 @@ LISA_satellite_coordinates_analytical_vm = jax.vmap(
 
 
 @jax.jit
+def _arms_matrix_from_satellite_positions(m1, m2, m3):
+    """
+    Builds the LISA arm matrix (the vector difference between each ordered
+    pair of satellites) from the three satellites' Cartesian positions.
+
+    This differencing is identical regardless of which orbit model produced
+    the positions, so it is shared by `LISA_arms_matrix_analytical`,
+    `LISA_arms_matrix_keplerian`, and `LISA_arms_matrix_numerical`.
+
+    Args:
+        m1, m2, m3 (jnp.ndarray): The Cartesian positions of satellites 1, 2,
+        and 3.
+
+    Returns:
+        jnp.ndarray: A numpy array representing the arm matrix of the LISA
+        constellation. Each row of the array corresponds to the vector
+        difference between pairs of LISA satellites.
+    """
+    return jnp.array(
+        [
+            m2 - m1,
+            m3 - m2,
+            m1 - m3,
+            m1 - m2,
+            m2 - m3,
+            m3 - m1,
+        ]
+    ).T
+
+
+@jax.jit
 def LISA_arms_matrix_analytical(time_in_years, orbit_radius, eccentricity):
     """
     Computes the arm matrix for the LISA constellation using an analytical
@@ -263,17 +306,7 @@ def LISA_arms_matrix_analytical(time_in_years, orbit_radius, eccentricity):
         orbit_radius,
         eccentricity,
     )
-
-    return jnp.array(
-        [
-            (m2 - m1),
-            (m3 - m2),
-            (m1 - m3),
-            (m1 - m2),
-            (m2 - m3),
-            (m3 - m1),
-        ]
-    ).T
+    return _arms_matrix_from_satellite_positions(m1, m2, m3)
 
 
 @jax.jit
@@ -496,17 +529,7 @@ def LISA_arms_matrix_keplerian(
         initial_clocking_angle,
         chirality,
     )
-
-    return jnp.array(
-        [
-            m2 - m1,
-            m3 - m2,
-            m1 - m3,
-            m1 - m2,
-            m2 - m3,
-            m3 - m1,
-        ]
-    ).T
+    return _arms_matrix_from_satellite_positions(m1, m2, m3)
 
 
 def load_numerical_orbits(orbit_file, interpolation_method="linear"):
@@ -606,17 +629,51 @@ def LISA_arms_matrix_numerical(time_in_years, orbit_interpolator):
     m1, m2, m3 = LISA_satellite_coordinates_numerical_vm(
         jnp.array([1, 2, 3]), time_in_years, orbit_interpolator
     )
+    return _arms_matrix_from_satellite_positions(m1, m2, m3)
 
-    return jnp.array(
-        [
-            m2 - m1,
-            m3 - m2,
-            m1 - m3,
-            m1 - m2,
-            m2 - m3,
-            m3 - m1,
-        ]
-    ).T
+
+def _LISA_satellite_coordinates_vm(
+    time_in_years,
+    orbit_radius,
+    eccentricity,
+    orbit_approximant,
+    orbit_interpolator,
+    keplerian_tilt_parameter,
+    keplerian_initial_clocking_angle,
+    keplerian_chirality,
+):
+    """
+    Dispatches to the vmapped per-satellite coordinate function for the
+    requested orbit approximant, returning the stacked (3, 3, ...) array
+    indexed as [satellite, coordinate, ...].
+
+    This is the one place the 'rigid' / 'keplerian' / 'numeric' branching
+    happens; it is shared by `LISA_satellite_positions` (which transposes the
+    result) and `LISA_arms_matrix` (which differences the three satellites).
+    """
+    indices = jnp.array([1, 2, 3])
+    if orbit_approximant == "rigid":
+        return LISA_satellite_coordinates_analytical_vm(
+            indices, time_in_years, orbit_radius, eccentricity
+        )
+    elif orbit_approximant == "keplerian":
+        return LISA_satellite_coordinates_keplerian_vm(
+            indices,
+            time_in_years,
+            orbit_radius,
+            eccentricity,
+            keplerian_tilt_parameter,
+            keplerian_initial_clocking_angle,
+            keplerian_chirality,
+        )
+    elif orbit_approximant == "numeric":
+        return LISA_satellite_coordinates_numerical_vm(
+            indices, time_in_years, orbit_interpolator
+        )
+    raise ValueError(
+        f"Unknown orbit approximant '{orbit_approximant}'. Must be 'rigid', "
+        "'keplerian', or 'numeric'."
+    )
 
 
 @partial(jax.jit, static_argnums=(3,))
@@ -670,28 +727,16 @@ def LISA_satellite_positions(
     trace time, so the different orbit models can have different data
     requirements.
     """
-    if orbit_approximant == "rigid":
-        return LISA_satellite_coordinates_analytical_vm(
-            jnp.array([1, 2, 3]), time_in_years, orbit_radius, eccentricity
-        ).T
-    elif orbit_approximant == "keplerian":
-        return LISA_satellite_coordinates_keplerian_vm(
-            jnp.array([1, 2, 3]),
-            time_in_years,
-            orbit_radius,
-            eccentricity,
-            keplerian_tilt_parameter,
-            keplerian_initial_clocking_angle,
-            keplerian_chirality,
-        ).T
-    elif orbit_approximant == "numeric":
-        return LISA_satellite_coordinates_numerical_vm(
-            jnp.array([1, 2, 3]), time_in_years, orbit_interpolator
-        ).T
-    raise ValueError(
-        f"Unknown orbit approximant '{orbit_approximant}'. Must be 'rigid', "
-        "'keplerian', or 'numeric'."
-    )
+    return _LISA_satellite_coordinates_vm(
+        time_in_years,
+        orbit_radius,
+        eccentricity,
+        orbit_approximant,
+        orbit_interpolator,
+        keplerian_tilt_parameter,
+        keplerian_initial_clocking_angle,
+        keplerian_chirality,
+    ).T
 
 
 @partial(jax.jit, static_argnums=(3,))
@@ -739,23 +784,17 @@ def LISA_arms_matrix(
     This function provides flexibility in simulating the LISA constellation by
     allowing the selection of different orbit models.
     """
-    if orbit_approximant == "rigid":
-        return LISA_arms_matrix_analytical(time_in_years, orbit_radius, eccentricity)
-    elif orbit_approximant == "keplerian":
-        return LISA_arms_matrix_keplerian(
-            time_in_years,
-            orbit_radius,
-            eccentricity,
-            keplerian_tilt_parameter,
-            keplerian_initial_clocking_angle,
-            keplerian_chirality,
-        )
-    elif orbit_approximant == "numeric":
-        return LISA_arms_matrix_numerical(time_in_years, orbit_interpolator)
-    raise ValueError(
-        f"Unknown orbit approximant '{orbit_approximant}'. Must be 'rigid', "
-        "'keplerian', or 'numeric'."
+    m1, m2, m3 = _LISA_satellite_coordinates_vm(
+        time_in_years,
+        orbit_radius,
+        eccentricity,
+        orbit_approximant,
+        orbit_interpolator,
+        keplerian_tilt_parameter,
+        keplerian_initial_clocking_angle,
+        keplerian_chirality,
     )
+    return _arms_matrix_from_satellite_positions(m1, m2, m3)
 
 
 @chex.dataclass
@@ -916,11 +955,7 @@ class LISA(Detector):
             in years, astronomical unit, orbit eccentricity, and orbit
             calculation method.
         """
-        time_in_years = (
-            jnp.array([time_in_years])
-            if isinstance(time_in_years, float)
-            else time_in_years
-        )
+        time_in_years = _as_time_array(time_in_years)
         return LISA_satellite_positions(
             time_in_years,
             self.ps.AU,
@@ -947,12 +982,7 @@ class LISA(Detector):
             LISA_arms_matrix function, with parameters including time in years,
             astronomical unit, orbit eccentricity, and orbit calculation method.
         """
-        time_in_years = (
-            jnp.array([time_in_years])
-            if isinstance(time_in_years, float)
-            else time_in_years
-        )
-
+        time_in_years = _as_time_array(time_in_years)
         return LISA_arms_matrix(
             time_in_years,
             self.ps.AU,
