@@ -1,5 +1,4 @@
 # Global imports
-from typing import Tuple
 
 import jax
 import jax.numpy as jnp
@@ -52,7 +51,7 @@ def unit_vec(theta: ArrayLike, phi: ArrayLike) -> jax.Array:
 
 
 @jax.jit
-def uv_analytical(theta: ArrayLike, phi: ArrayLike) -> Tuple[jax.Array, jax.Array]:
+def uv_analytical(theta: ArrayLike, phi: ArrayLike) -> tuple[jax.Array, jax.Array]:
     """
     Computes the two unit vectors spanning the plane transverse to the
     propagation direction, for each requested sky position.
@@ -98,7 +97,7 @@ def uv_analytical(theta: ArrayLike, phi: ArrayLike) -> Tuple[jax.Array, jax.Arra
 
 
 @jax.jit
-def polarization_vectors(u: ArrayLike, v: ArrayLike) -> Tuple[jax.Array, jax.Array]:
+def polarization_vectors(u: ArrayLike, v: ArrayLike) -> tuple[jax.Array, jax.Array]:
     """
     Builds the complex left/right circular polarization vectors from the two
     transverse unit vectors.
@@ -119,7 +118,7 @@ def polarization_vectors(u: ArrayLike, v: ArrayLike) -> Tuple[jax.Array, jax.Arr
 
 
 @jax.jit
-def polarization_tensors_PC(u: ArrayLike, v: ArrayLike) -> Tuple[jax.Array, jax.Array]:
+def polarization_tensors_PC(u: ArrayLike, v: ArrayLike) -> tuple[jax.Array, jax.Array]:
     """
     Computes the plus/cross gravitational wave polarization tensors.
 
@@ -142,7 +141,7 @@ def polarization_tensors_PC(u: ArrayLike, v: ArrayLike) -> Tuple[jax.Array, jax.
 
 
 @jax.jit
-def polarization_tensors_LR(u: ArrayLike, v: ArrayLike) -> Tuple[jax.Array, jax.Array]:
+def polarization_tensors_LR(u: ArrayLike, v: ArrayLike) -> tuple[jax.Array, jax.Array]:
     """
     Computes the left/right circular gravitational wave polarization
     tensors.
@@ -170,14 +169,23 @@ def polarization_tensors_LR(u: ArrayLike, v: ArrayLike) -> Tuple[jax.Array, jax.
 def xi_k_no_G(
     unit_wavevector: ArrayLike, x_vector: ArrayLike, arms_mat_rescaled: ArrayLike
 ) -> jax.Array:
-    """x_vector is a vector over frequency (2 pi f L / c) unit_wavevector is
-    vectorial index (3), pixels arms_mat_norm is (configurations (num time
-    slices),) vectorial_index (3), arms (6)
+    """
+    Computes the finite-arm-length transfer function of the single-link
+    response, before the geometrical antenna-pattern factor is applied (see
+    :func:`xi_k_Avec_func`, which combines this with :func:`geometrical_factor`).
 
-    This returns an object with shape:
-    configurations, x_vector, arms, pixels
+    Args:
+        unit_wavevector (ArrayLike): Unit wavevector(s), with shape
+            (vectorial_index (3), pixels).
+        x_vector (ArrayLike): Vector of ``2 pi f L / c`` values over
+            frequency.
+        arms_mat_rescaled (ArrayLike): Detector arm vectors rescaled by the
+            arm length, with shape (configurations, vectorial_index (3),
+            arms (6)).
 
-    2.5 of the present draft without G
+    Returns:
+        jax.Array: The finite-arm-length transfer function, with shape
+            (configurations, x_vector, arms, pixels).
     """
 
     k_dot_arms = jnp.einsum("...ij,ik->...jk", arms_mat_rescaled, unit_wavevector)
@@ -197,10 +205,24 @@ def xi_k_no_G(
 def position_exponential(
     positions_detector_frame: ArrayLike, unit_wavevector: ArrayLike, x_vector: ArrayLike
 ) -> jax.Array:
-    """x_vector is a vector unit_wavevector is vectorial index, pixels
-    positions_detector_frame is configurations, vectorial_index, satellite (3)
-    # Need shifted positions to get the numerical precision in the dot
-    product."""
+    """
+    Computes the plane-wave phase factor picked up by each satellite due to
+    its position relative to the detector-frame center.
+
+    Args:
+        positions_detector_frame (ArrayLike): Satellite positions relative to
+            the detector-frame center (already shifted for numerical
+            precision in the dot product below), with shape (configurations,
+            vectorial_index (3), satellite (3)).
+        unit_wavevector (ArrayLike): Unit wavevector(s), with shape
+            (vectorial_index (3), pixels).
+        x_vector (ArrayLike): Vector of ``2 pi f L / c`` values over
+            frequency.
+
+    Returns:
+        jax.Array: The position phase factor, with shape (configurations,
+            x_vector, satellite, pixels).
+    """
 
     # This is configurations, satellite, pixels
     scalar = jnp.einsum("...ij,ik->...jk", positions_detector_frame, unit_wavevector)

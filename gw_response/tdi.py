@@ -1,5 +1,4 @@
 # Global imports
-from typing import Dict, List
 
 import jax
 import jax.numpy as jnp
@@ -327,7 +326,7 @@ def tdi_AE_Sagnac_zeta_matrix(
 
 # Maps a TDI combination name to its index in `tdi_fun_list` (used with
 # `jax.lax.switch`, which requires a static/traced integer, not a string).
-TDI_map: Dict[str, int] = {
+TDI_map: dict[str, int] = {
     "XYZ": 0,
     "AET": 1,
     "Sagnac": 2,
@@ -338,7 +337,7 @@ TDI_map: Dict[str, int] = {
 
 # The TDI projection-matrix function for each entry of `TDI_map`, indexed in
 # the same order.
-tdi_fun_list: List = [
+tdi_fun_list: list = [
     tdi_XYZ_matrix,
     tdi_AET_matrix,
     tdi_Sagnac_matrix,
@@ -349,7 +348,7 @@ tdi_fun_list: List = [
 
 # Human-readable (LaTeX-friendly) labels for the 3 TDI channels of each
 # combination in `TDI_map`, e.g. for use in plot legends.
-TDI_labels: Dict[str, List[str]] = {
+TDI_labels: dict[str, list[str]] = {
     "XYZ": ["XX", "YY", "ZZ"],
     "AET": ["AA", "EE", "TT"],
     "Sagnac": [r"$\alpha \alpha$", r"$\beta \beta$", r"$\gamma \gamma$"],

@@ -1,6 +1,4 @@
 # Global imports
-from typing import Union
-
 import jax
 import jax.numpy as jnp
 from jax.typing import ArrayLike
@@ -482,15 +480,16 @@ class LISA(Detector):
         """
         return 2 * jnp.pi * self.klvector(frequency_vec)
 
-    def satellite_positions(self, time_in_years: Union[float, ArrayLike]) -> jax.Array:
+    def satellite_positions(self, time_in_years: ArrayLike) -> jax.Array:
         """
         Calculates the positions of LISA satellites at a given time in years.
 
         Args:
             time_in_years (float): The time at which the positions are to be
                 calculated, in years.
-            which_orbits (str): The method of orbit calculation, defaulting to
-                'analytic'.
+
+        Uses `self.which_orbits` (defaulting to 'analytic') as the orbit
+        calculation method.
 
         Returns:
                 The positions of LISA satellites as calculated by the
@@ -507,15 +506,16 @@ class LISA(Detector):
             time_in_years, self.ps.AU, self.ecc, self.which_orbits
         )
 
-    def detector_arms(self, time_in_years: Union[float, ArrayLike]) -> jax.Array:
+    def detector_arms(self, time_in_years: ArrayLike) -> jax.Array:
         """
         Computes the arm matrix of the LISA detector for a given time in years.
 
         Args:
             time_in_years (float): The time at which the arm matrix is to be
                 computed, in years.
-            which_orbits (str): The method of orbit calculation, defaulting to
-                'analytic'.
+
+        Uses `self.which_orbits` (defaulting to 'analytic') as the orbit
+        calculation method.
 
         Returns:
                 The arm matrix of the LISA detector as calculated by the

@@ -1,6 +1,5 @@
 # Global imports
 import os
-from typing import Tuple
 
 import jax
 import jax.numpy as jnp
@@ -55,7 +54,7 @@ class Pixel:
             self.phi_pixel,
         ) = self.compute_pixelisation()
 
-    def compute_pixelisation(self) -> Tuple[int, jax.Array, jax.Array, jax.Array]:
+    def compute_pixelisation(self) -> tuple[int, jax.Array, jax.Array, jax.Array]:
         """
         Computes the pixelization parameters of the sky.
 
@@ -105,18 +104,18 @@ def arm_length_exponential(
     of accounting for the time delay in the arms of the interferometer due to
     the finite speed of light.
 
-    Parameters:
-    arms_matrix_rescaled (array): A 3D array representing the rescaled arm
-    matrices of the interferometer. The dimensions are [configurations,
-    vectorial_index (3), arms (6)]. Ordering: [12, 23, 31, 21, 32, 13].
-    x_vector (array): A 1D array representing the x values over frequency.
-    These values are specific to the LISA interferometer's configuration and
-    operational characteristics.
+    Args:
+        arms_matrix_rescaled (ArrayLike): Rescaled arm matrices of the
+            interferometer, with shape (configurations, vectorial_index (3),
+            arms (6)). Ordering: [12, 23, 31, 21, 32, 13].
+        x_vector (ArrayLike): Vector of the x values over frequency, specific
+            to the LISA interferometer's configuration and operational
+            characteristics.
 
     Returns:
-    array: A complex-valued 3D array representing the exponential factors.
-    The dimensions are [configurations, x_vector, arms]. These factors are used
-    in further calculations of the TDI response.
+        jax.Array: A complex-valued 3D array representing the exponential
+            factors, with shape [configurations, x_vector, arms]. These
+            factors are used in further calculations of the TDI response.
     """
     arm_lengths = jnp.sqrt(
         jnp.einsum("...ij,...ij->...j", arms_matrix_rescaled, arms_matrix_rescaled)
@@ -128,7 +127,7 @@ def arm_length_exponential(
 @jax.jit
 def shift_to_center(
     first: ArrayLike, second: ArrayLike, third: ArrayLike
-) -> Tuple[jax.Array, jax.Array, jax.Array]:
+) -> tuple[jax.Array, jax.Array, jax.Array]:
     """
     Adjusts the positions of three points (or vectors) so that their barycenter
     is at the origin.

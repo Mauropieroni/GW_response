@@ -1,5 +1,3 @@
-from typing import Dict
-
 import chex
 import jax
 from jax.typing import ArrayLike
@@ -56,14 +54,16 @@ class Response(object):
     def __post_init__(self, **kwargs) -> None:
         """
         Binds the detector's ``satellite_positions`` and ``detector_arms``
-        methods, together with any extra keyword arguments, into the
-        ``get_positions`` and ``get_arms`` helpers used throughout this
-        class.
+        methods into the ``get_positions`` and ``get_arms`` helpers used
+        throughout this class.
 
         Args:
                 **kwargs: Extra keyword arguments forwarded to
                 ``det.satellite_positions`` and ``det.detector_arms`` on every
-                call (e.g. to select a non-default orbit model).
+                call. Reserved for future per-call detector options; ``ps``
+                and ``det`` are regular dataclass fields (not ``InitVar``),
+                so no keyword arguments reach here through normal
+                ``Response(...)`` construction today.
         """
         self.get_positions = lambda times: self.det.satellite_positions(times, **kwargs)
         self.get_arms = lambda times: self.det.detector_arms(times, **kwargs)
@@ -76,7 +76,7 @@ class Response(object):
         phi_array: ArrayLike,
         frequency_array: ArrayLike,
         polarization: str = "LR",
-    ) -> Dict[str, jax.Array]:
+    ) -> dict[str, jax.Array]:
         """
         Computes the single-link strain response for both polarizations of
         the requested basis.
@@ -135,11 +135,11 @@ class Response(object):
     def get_linear_integrand(
         self,
         times_in_years: ArrayLike,
-        single_link: Dict[str, ArrayLike],
+        single_link: dict[str, ArrayLike],
         frequency_array: ArrayLike,
         TDI: str = "XYZ",
         polarization: str = "LR",
-    ) -> Dict[str, jax.Array]:
+    ) -> dict[str, jax.Array]:
         """
         Projects a single-link response onto a TDI combination, for each
         polarization.
@@ -180,11 +180,11 @@ class Response(object):
     def get_quadratic_integrand(
         self,
         times_in_years: ArrayLike,
-        single_link: Dict[str, ArrayLike],
+        single_link: dict[str, ArrayLike],
         frequency_array: ArrayLike,
         TDI: str = "XYZ",
         polarization: str = "LR",
-    ) -> Dict[str, jax.Array]:
+    ) -> dict[str, jax.Array]:
         """
         Computes the sky-resolved quadratic TDI response, for each
         polarization.
@@ -225,11 +225,11 @@ class Response(object):
     # @partial(jax.jit, static_argnums=(0, 1, 2, 3))
     def get_quadratic_integrated(
         self,
-        quadratic_integrand: Dict[str, Dict[str, ArrayLike]],
+        quadratic_integrand: dict[str, dict[str, ArrayLike]],
         TDI: str = "XYZ",
         polarization: str = "LR",
         verbose: bool = True,
-    ) -> Dict[str, jax.Array]:
+    ) -> dict[str, jax.Array]:
         """
         Averages the sky-resolved quadratic TDI response over the sky, for
         each polarization.
