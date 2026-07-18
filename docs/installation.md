@@ -44,3 +44,14 @@ visible:
 python -c "import jax; print(jax.devices())"
 # e.g. [CudaDevice(id=0)]
 ```
+
+## Building the docs locally
+
+```bash
+uv pip install -e ".[docs]"
+sphinx-build -b html docs docs/_build/html
+```
+
+Open `docs/_build/html/index.html` in a browser. These are the same pages
+published on Read the Docs, built from the `docs` extra declared in
+`pyproject.toml`.
