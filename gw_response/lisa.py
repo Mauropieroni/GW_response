@@ -1,9 +1,6 @@
 # Global imports
 import jax
 import jax.numpy as jnp
-import numpy as np
-import interpax
-import h5py
 
 import chex
 from functools import partial
@@ -11,6 +8,7 @@ from functools import partial
 # Local imports
 from .constants import PhysicalConstants
 from .detector import Detector
+from .utils import arms_matrix_from_satellite_positions, load_numerical_orbits
 
 # Update jax configuration to enable 64-bit precision for numerical computations
 jax.config.update("jax_enable_x64", True)
@@ -251,37 +249,6 @@ LISA_satellite_coordinates_analytical_vm = jax.vmap(
 
 
 @jax.jit
-def _arms_matrix_from_satellite_positions(m1, m2, m3):
-    """
-    Builds the LISA arm matrix (the vector difference between each ordered
-    pair of satellites) from the three satellites' Cartesian positions.
-
-    This differencing is identical regardless of which orbit model produced
-    the positions, so it is shared by `LISA_arms_matrix_analytical`,
-    `LISA_arms_matrix_keplerian`, and `LISA_arms_matrix_numerical`.
-
-    Args:
-        m1, m2, m3 (jnp.ndarray): The Cartesian positions of satellites 1, 2,
-        and 3.
-
-    Returns:
-        jnp.ndarray: A numpy array representing the arm matrix of the LISA
-        constellation. Each row of the array corresponds to the vector
-        difference between pairs of LISA satellites.
-    """
-    return jnp.array(
-        [
-            m2 - m1,
-            m3 - m2,
-            m1 - m3,
-            m1 - m2,
-            m2 - m3,
-            m3 - m1,
-        ]
-    ).T
-
-
-@jax.jit
 def LISA_arms_matrix_analytical(time_in_years, orbit_radius, eccentricity):
     """
     Computes the arm matrix for the LISA constellation using an analytical
@@ -307,7 +274,7 @@ def LISA_arms_matrix_analytical(time_in_years, orbit_radius, eccentricity):
         orbit_radius,
         eccentricity,
     )
-    return _arms_matrix_from_satellite_positions(m1, m2, m3)
+    return arms_matrix_from_satellite_positions(m1, m2, m3)
 
 
 @jax.jit
@@ -530,95 +497,7 @@ def LISA_arms_matrix_keplerian(
         initial_clocking_angle,
         chirality,
     )
-    return _arms_matrix_from_satellite_positions(m1, m2, m3)
-
-
-def _load_numerical_orbits_text(orbit_file):
-    """
-    Loads numerical LISA satellite orbit data from a plain-text file.
-
-    The file is expected to be readable by `numpy.loadtxt` and to contain 10
-    columns: time_in_years, x1, y1, z1, x2, y2, z2, x3, y3, z3, where
-    (xi, yi, zi) are the coordinates (in meters) of satellite i at the given
-    time. One row per time sample, with rows sorted by increasing time.
-    """
-    data = np.atleast_2d(np.loadtxt(orbit_file))
-    if data.shape[1] != 10:
-        raise ValueError(
-            "Numerical orbit files must have 10 columns: time_in_years, x1, "
-            "y1, z1, x2, y2, z2, x3, y3, z3. Got "
-            f"{data.shape[1]} columns instead."
-        )
-    time_grid = jnp.array(data[:, 0])
-    positions_grid = jnp.array(data[:, 1:]).reshape(data.shape[0], 3, 3)
-    return time_grid, positions_grid
-
-
-def _load_numerical_orbits_lisaorbits(orbit_file):
-    """
-    Loads numerical LISA satellite orbit data from an HDF5 orbit file
-    produced by the `lisaorbits` package
-    (https://pypi.org/project/lisaorbits/).
-
-    Only the spacecraft positions (dataset `tcb/x`, shape (size, 3, 3) for
-    (time, satellite, xyz), in meters) and the TCB time grid (attributes
-    `t0` and `dt`, both in seconds, and `size`) are used; velocities,
-    accelerations, light travel times, and pseudoranges are ignored. The
-    time grid is converted from seconds to years to match this module's
-    convention.
-    """
-    with h5py.File(orbit_file, "r") as hdf5:
-        version = str(hdf5.attrs["version"])
-        if int(version.split(".", 1)[0]) < 2:
-            raise ValueError(
-                f"Unsupported lisaorbits file version {version!r}; "
-                "gw_response requires lisaorbits format version >= 2.0."
-            )
-        t0 = float(hdf5.attrs["t0"])
-        dt = float(hdf5.attrs["dt"])
-        size = int(hdf5.attrs["size"])
-        positions_grid = jnp.array(hdf5["tcb/x"][:])
-    time_grid = (t0 + np.arange(size) * dt) / PhysicalConstants().yr
-    return jnp.array(time_grid), positions_grid
-
-
-def load_numerical_orbits(orbit_file, interpolation_method="linear"):
-    """
-    Loads numerical LISA satellite orbit data from an external file and builds
-    an interpolator for the satellite positions.
-
-    Two file formats are supported, auto-detected from the file content:
-      - Plain-text files readable by `numpy.loadtxt`, with 10 columns:
-        time_in_years, x1, y1, z1, x2, y2, z2, x3, y3, z3. See
-        `_load_numerical_orbits_text`.
-      - HDF5 orbit files produced by the `lisaorbits` package
-        (https://pypi.org/project/lisaorbits/), format version >= 2.0. See
-        `_load_numerical_orbits_lisaorbits`.
-
-    The interpolation coefficients are computed once here (similar in spirit
-    to `scipy.interpolate.interp1d`), so evaluating the returned interpolator
-    at query times - even repeatedly inside a jit/vmap - only needs to
-    evaluate the precomputed spline rather than re-deriving it.
-
-    Args:
-        orbit_file (str): Path to the numerical orbit data file.
-        interpolation_method (str, optional): The interpolation method passed
-        to `interpax.Interpolator1D`, e.g. 'linear', 'nearest', 'cubic',
-        'cubic2', 'cardinal', 'catmull-rom', 'monotonic', 'monotonic-0', or
-        'akima'. Default is 'linear'.
-
-    Returns:
-        interpax.Interpolator1D: An interpolator mapping time (in years) to
-        satellite positions. Calling it with query time(s) returns an array
-        of shape (..., 3, 3), indexed as [satellite, coordinate].
-    """
-    if h5py.is_hdf5(orbit_file):
-        time_grid, positions_grid = _load_numerical_orbits_lisaorbits(orbit_file)
-    else:
-        time_grid, positions_grid = _load_numerical_orbits_text(orbit_file)
-    return interpax.Interpolator1D(
-        time_grid, positions_grid, method=interpolation_method
-    )
+    return arms_matrix_from_satellite_positions(m1, m2, m3)
 
 
 @jax.jit
@@ -677,7 +556,7 @@ def LISA_arms_matrix_numerical(time_in_years, orbit_interpolator):
     m1, m2, m3 = LISA_satellite_coordinates_numerical_vm(
         jnp.array([1, 2, 3]), time_in_years, orbit_interpolator
     )
-    return _arms_matrix_from_satellite_positions(m1, m2, m3)
+    return arms_matrix_from_satellite_positions(m1, m2, m3)
 
 
 def _LISA_satellite_coordinates_vm(
@@ -842,7 +721,7 @@ def LISA_arms_matrix(
         keplerian_initial_clocking_angle,
         keplerian_chirality,
     )
-    return _arms_matrix_from_satellite_positions(m1, m2, m3)
+    return arms_matrix_from_satellite_positions(m1, m2, m3)
 
 
 @chex.dataclass
