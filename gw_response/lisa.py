@@ -3,6 +3,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import interpax
+import h5py
 
 import chex
 from functools import partial
@@ -532,15 +533,67 @@ def LISA_arms_matrix_keplerian(
     return _arms_matrix_from_satellite_positions(m1, m2, m3)
 
 
-def load_numerical_orbits(orbit_file, interpolation_method="linear"):
+def _load_numerical_orbits_text(orbit_file):
     """
-    Loads numerical LISA satellite orbit data from an external file and builds
-    an interpolator for the satellite positions.
+    Loads numerical LISA satellite orbit data from a plain-text file.
 
     The file is expected to be readable by `numpy.loadtxt` and to contain 10
     columns: time_in_years, x1, y1, z1, x2, y2, z2, x3, y3, z3, where
     (xi, yi, zi) are the coordinates (in meters) of satellite i at the given
     time. One row per time sample, with rows sorted by increasing time.
+    """
+    data = np.atleast_2d(np.loadtxt(orbit_file))
+    if data.shape[1] != 10:
+        raise ValueError(
+            "Numerical orbit files must have 10 columns: time_in_years, x1, "
+            "y1, z1, x2, y2, z2, x3, y3, z3. Got "
+            f"{data.shape[1]} columns instead."
+        )
+    time_grid = jnp.array(data[:, 0])
+    positions_grid = jnp.array(data[:, 1:]).reshape(data.shape[0], 3, 3)
+    return time_grid, positions_grid
+
+
+def _load_numerical_orbits_lisaorbits(orbit_file):
+    """
+    Loads numerical LISA satellite orbit data from an HDF5 orbit file
+    produced by the `lisaorbits` package
+    (https://pypi.org/project/lisaorbits/).
+
+    Only the spacecraft positions (dataset `tcb/x`, shape (size, 3, 3) for
+    (time, satellite, xyz), in meters) and the TCB time grid (attributes
+    `t0` and `dt`, both in seconds, and `size`) are used; velocities,
+    accelerations, light travel times, and pseudoranges are ignored. The
+    time grid is converted from seconds to years to match this module's
+    convention.
+    """
+    with h5py.File(orbit_file, "r") as hdf5:
+        version = str(hdf5.attrs["version"])
+        if int(version.split(".", 1)[0]) < 2:
+            raise ValueError(
+                f"Unsupported lisaorbits file version {version!r}; "
+                "gw_response requires lisaorbits format version >= 2.0."
+            )
+        t0 = float(hdf5.attrs["t0"])
+        dt = float(hdf5.attrs["dt"])
+        size = int(hdf5.attrs["size"])
+        positions_grid = jnp.array(hdf5["tcb/x"][:])
+    time_grid = (t0 + np.arange(size) * dt) / PhysicalConstants().yr
+    return jnp.array(time_grid), positions_grid
+
+
+def load_numerical_orbits(orbit_file, interpolation_method="linear"):
+    """
+    Loads numerical LISA satellite orbit data from an external file and builds
+    an interpolator for the satellite positions.
+
+    Two file formats are supported, auto-detected from the file content:
+      - Plain-text files readable by `numpy.loadtxt`, with 10 columns:
+        time_in_years, x1, y1, z1, x2, y2, z2, x3, y3, z3. See
+        `_load_numerical_orbits_text`.
+      - HDF5 orbit files produced by the `lisaorbits` package
+        (https://pypi.org/project/lisaorbits/), format version >= 2.0. See
+        `_load_numerical_orbits_lisaorbits`.
 
     The interpolation coefficients are computed once here (similar in spirit
     to `scipy.interpolate.interp1d`), so evaluating the returned interpolator
@@ -559,15 +612,10 @@ def load_numerical_orbits(orbit_file, interpolation_method="linear"):
         satellite positions. Calling it with query time(s) returns an array
         of shape (..., 3, 3), indexed as [satellite, coordinate].
     """
-    data = np.atleast_2d(np.loadtxt(orbit_file))
-    if data.shape[1] != 10:
-        raise ValueError(
-            "Numerical orbit files must have 10 columns: time_in_years, x1, "
-            "y1, z1, x2, y2, z2, x3, y3, z3. Got "
-            f"{data.shape[1]} columns instead."
-        )
-    time_grid = jnp.array(data[:, 0])
-    positions_grid = jnp.array(data[:, 1:]).reshape(data.shape[0], 3, 3)
+    if h5py.is_hdf5(orbit_file):
+        time_grid, positions_grid = _load_numerical_orbits_lisaorbits(orbit_file)
+    else:
+        time_grid, positions_grid = _load_numerical_orbits_text(orbit_file)
     return interpax.Interpolator1D(
         time_grid, positions_grid, method=interpolation_method
     )

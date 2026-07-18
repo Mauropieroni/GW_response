@@ -4,6 +4,7 @@ import gw_response as gwr
 import os
 import tempfile
 import numpy as np
+import h5py
 
 TEST_DATA_PATH = os.path.join(os.path.dirname(__file__), "test_data/")
 
@@ -140,6 +141,12 @@ class TestLISA(unittest.TestCase):
         orbit_radius = gwr.PhysicalConstants().AU
         eccentricity = gwr.LISA().ecc
         time_grid = jnp.linspace(0, 1.0, 50)
+        expected_positions = jnp.transpose(
+            gwr.LISA_satellite_coordinates_analytical_vm(
+                jnp.array([1, 2, 3]), time_grid, orbit_radius, eccentricity
+            ),
+            (2, 0, 1),
+        )  # (N times, 3 satellites, 3 coords), matching orbit_interpolator.f layout
         with tempfile.TemporaryDirectory() as tmp_dir:
             orbit_file = os.path.join(tmp_dir, "orbits.txt")
             write_numerical_orbit_file(
@@ -148,6 +155,21 @@ class TestLISA(unittest.TestCase):
             orbit_interpolator = gwr.load_numerical_orbits(orbit_file)
         self.assertEqual(orbit_interpolator.f.shape, (50, 3, 3))
         self.assertAlmostEqual(jnp.sum(jnp.abs(orbit_interpolator.x - time_grid)), 0.0)
+        # Round trip: the stored positions, once loaded back, must match what
+        # was written (catches e.g. a column/reshape mixup in
+        # `load_numerical_orbits`), both in the raw stored knots and when
+        # queried through the interpolator at those same knot times.
+        self.assertAlmostEqual(
+            jnp.sum(jnp.abs(orbit_interpolator.f - expected_positions))
+            / jnp.max(jnp.abs(expected_positions)),
+            0.0,
+        )
+        queried_positions = orbit_interpolator(time_grid)
+        self.assertAlmostEqual(
+            jnp.sum(jnp.abs(queried_positions - expected_positions))
+            / jnp.max(jnp.abs(expected_positions)),
+            0.0,
+        )
 
     def test_load_numerical_orbits_interpolation_method(self):
         orbit_radius = gwr.PhysicalConstants().AU
@@ -171,6 +193,45 @@ class TestLISA(unittest.TestCase):
             np.savetxt(orbit_file, np.zeros((10, 4)))
             with self.assertRaises(ValueError):
                 gwr.load_numerical_orbits(orbit_file)
+
+    def test_load_numerical_orbits_lisaorbits_hdf5(self):
+        # Fixture generated with `lisaorbits.KeplerianOrbits().write(path,
+        # dt=100000.0, size=30, mode="w")` (lisaorbits 3.1.0), exercising the
+        # real HDF5 format produced by that package: an HDF5 file with
+        # `t0`/`dt`/`size`/`version` attributes (TCB time in seconds) and a
+        # `tcb/x` dataset of shape (size, 3, 3) for (time, satellite, xyz) in
+        # meters.
+        orbit_file = os.path.join(
+            TEST_DATA_PATH, "lisaorbits_numerical_orbit_data.h5"
+        )
+        with h5py.File(orbit_file, "r") as hdf5:
+            t0 = float(hdf5.attrs["t0"])
+            dt = float(hdf5.attrs["dt"])
+            size = int(hdf5.attrs["size"])
+            expected_positions = jnp.array(hdf5["tcb/x"][:])
+        expected_time_grid = (t0 + jnp.arange(size) * dt) / gwr.PhysicalConstants().yr
+
+        orbit_interpolator = gwr.load_numerical_orbits(orbit_file)
+        self.assertEqual(orbit_interpolator.f.shape, (size, 3, 3))
+        self.assertAlmostEqual(
+            jnp.sum(jnp.abs(orbit_interpolator.x - expected_time_grid)), 0.0
+        )
+        self.assertAlmostEqual(
+            jnp.sum(jnp.abs(orbit_interpolator.f - expected_positions))
+            / jnp.max(jnp.abs(expected_positions)),
+            0.0,
+        )
+
+        # The LISA class should be able to drive satellite positions and
+        # arms off this file end to end, without falling back to NaNs.
+        lisa_numeric = gwr.LISA(orbit_approximant="numeric", orbit_file=orbit_file)
+        query_time = jnp.linspace(
+            expected_time_grid[0], expected_time_grid[-1], 50
+        )
+        positions = lisa_numeric.satellite_positions(query_time)
+        arms = lisa_numeric.detector_arms(query_time)
+        self.assertFalse(bool(jnp.any(jnp.isnan(positions))))
+        self.assertFalse(bool(jnp.any(jnp.isnan(arms))))
 
     def test_lisa_numerical_orbits_matches_analytical(self):
         # The fixture file stores analytical ("rigid") positions on a coarse
