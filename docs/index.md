@@ -16,8 +16,12 @@ interferometry (TDI) and detector noise — is JIT-compilable and runs on CPU or
   quadratic response for any TDI channel and polarization basis (`LR` or `PC`).
 - **Instrument noise** — test-mass (acceleration) and OMS (interferometric) noise
   projected into the TDI basis via the `Noise` class.
-- **Analytic LISA orbits** — closed-form satellite positions and arm vectors, with
-  a `Detector` base class for extending to other missions.
+- **Multiple LISA orbit models** — a perfectly rigid analytic constellation, an
+  exact Keplerian cartwheel model (Martens & Joffre 2021, arXiv:2101.03040), or
+  numerical orbits interpolated from a file (plain-text or
+  [`lisaorbits`](https://pypi.org/project/lisaorbits/) HDF5), selected via
+  `orbit_approximant`. A `Detector` base class allows extending to other
+  missions.
 - **HEALPix sky pixelisation** through a JAX-friendly `Pixel` helper.
 
 ```{toctree}

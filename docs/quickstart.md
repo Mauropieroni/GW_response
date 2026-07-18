@@ -40,6 +40,17 @@ noise.compute_detector(times, TM, OMS, TDI="XYZ")
 print(noise.noise_matrix["XYZ"].shape)
 ```
 
+Switch between orbit models via `orbit_approximant`:
+
+```python
+lisa_rigid = gwr.LISA()  # orbit_approximant="rigid" (default)
+lisa_keplerian = gwr.LISA(orbit_approximant="keplerian")
+lisa_numeric = gwr.LISA(
+    orbit_approximant="numeric",
+    orbit_file="orbits.h5",  # plain-text or lisaorbits HDF5
+)
+```
+
 See the
 [`tutorial.ipynb`](https://github.com/Mauropieroni/GW_response/blob/main/tutorial.ipynb)
 notebook for a full, worked walk-through.
@@ -50,7 +61,7 @@ notebook for a full, worked walk-through.
 | --- | --- |
 | `constants.py` | `PhysicalConstants`, basis transformations |
 | `detector.py` | Abstract `Detector` base class |
-| `lisa.py` | `LISA` detector: analytic orbits and arm vectors |
+| `lisa.py` | `LISA` detector: rigid, Keplerian, and numerical orbits and arm vectors |
 | `single_link.py` | Single-link response, polarization tensors |
 | `tdi.py` | Time-delay interferometry combinations (`XYZ`, `AET`, Sagnac, …) |
 | `response.py` | `Response`: linear & quadratic response driver |

@@ -25,8 +25,12 @@ interferometry (TDI) and detector noise — is JIT-compilable and runs on CPU or
   quadratic response for any TDI channel and polarization basis (`LR` or `PC`).
 - **Instrument noise** — test-mass (acceleration) and OMS (interferometric) noise
   projected into the TDI basis via the `Noise` class.
-- **Analytic LISA orbits** — closed-form satellite positions and arm vectors, with
-  a `Detector` base class for extending to other missions.
+- **Multiple LISA orbit models** — a perfectly rigid analytic constellation, an
+  exact Keplerian cartwheel model (Martens & Joffre 2021, arXiv:2101.03040), or
+  numerical orbits interpolated from a file (plain-text or
+  [`lisaorbits`](https://pypi.org/project/lisaorbits/) HDF5), selected via
+  `orbit_approximant`. A `Detector` base class allows extending to other
+  missions.
 - **HEALPix sky pixelisation** through a JAX-friendly `Pixel` helper.
 
 ## Installation
@@ -118,6 +122,17 @@ noise.compute_detector(times, TM, OMS, TDI="XYZ")
 print(noise.noise_matrix["XYZ"].shape)
 ```
 
+Switch between orbit models via `orbit_approximant`:
+
+```python
+lisa_rigid = gwr.LISA()  # orbit_approximant="rigid" (default)
+lisa_keplerian = gwr.LISA(orbit_approximant="keplerian")
+lisa_numeric = gwr.LISA(
+    orbit_approximant="numeric",
+    orbit_file="orbits.h5",  # plain-text or lisaorbits HDF5
+)
+```
+
 See [`tutorial.ipynb`](tutorial.ipynb) for a full, worked walk-through.
 
 ## Package layout
@@ -126,7 +141,7 @@ See [`tutorial.ipynb`](tutorial.ipynb) for a full, worked walk-through.
 | --- | --- |
 | `constants.py` | `PhysicalConstants`, basis transformations |
 | `detector.py` | Abstract `Detector` base class |
-| `lisa.py` | `LISA` detector: analytic orbits and arm vectors |
+| `lisa.py` | `LISA` detector: rigid, Keplerian, and numerical orbits and arm vectors |
 | `single_link.py` | Single-link response, polarization tensors |
 | `tdi.py` | Time-delay interferometry combinations (`XYZ`, `AET`, Sagnac, …) |
 | `response.py` | `Response`: linear & quadratic response driver |
