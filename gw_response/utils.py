@@ -1,12 +1,11 @@
 # Global imports
 import os
-
+import chex
 import jax
 import jax.numpy as jnp
-from jax.typing import ArrayLike
-import chex
-import numpy as np
 import jax_healpy as hp
+from jax.typing import ArrayLike
+import numpy as np
 
 # Update jax configuration to enable 64-bit precision for numerical computations
 jax.config.update("jax_enable_x64", True)
@@ -66,11 +65,8 @@ class Pixel:
                 - phi_pixel (jax.Array): The phi values for each pixel.
         """
         NPIX = hp.nside2npix(self.NSIDE)
-        angular_map = jnp.array(
-            jnp.rollaxis(jnp.array(hp.pix2ang(self.NSIDE, jnp.arange(NPIX))), -1)
-        )
-        theta_pixel = jnp.array(angular_map[:, 0])
-        phi_pixel = jnp.array(angular_map[:, 1])
+        theta_pixel, phi_pixel = hp.pix2ang(self.NSIDE, jnp.arange(NPIX))
+        angular_map = jnp.stack([theta_pixel, phi_pixel], axis=-1)
         return NPIX, angular_map, theta_pixel, phi_pixel
 
     def change_NSIDE(self, NSIDE: int) -> None:

@@ -1,8 +1,6 @@
 [flake8]
 max-line-length = 88
 extend-select =
-extend-ignore = E203
-exclude =
-    build
+extend-ignore = 
 per-file-ignores =
     gw_response/__init__.py:F401,F403

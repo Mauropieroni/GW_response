@@ -28,18 +28,8 @@ def unit_vec(theta: ArrayLike, phi: ArrayLike) -> jax.Array:
         jax.Array: The unit wavevector(s) in Cartesian coordinates, with
             shape (vectorial_index (3), pixels).
     """
-    theta = jax.lax.cond(
-        isinstance(theta, float),
-        lambda theta: jnp.reshape(jnp.array([theta]), (-1,)),
-        lambda theta: jnp.reshape(jnp.array(theta), (-1,)),
-        theta,
-    )
-    phi = jax.lax.cond(
-        isinstance(phi, float),
-        lambda phi: jnp.reshape(jnp.array([phi]), (-1,)),
-        lambda phi: jnp.reshape(jnp.array(phi), (-1,)),
-        phi,
-    )
+    theta = jnp.atleast_1d(theta)
+    phi = jnp.atleast_1d(phi)
     # The output will be vectorial index, pixels
     return jnp.array(
         [
@@ -71,18 +61,8 @@ def uv_analytical(theta: ArrayLike, phi: ArrayLike) -> tuple[jax.Array, jax.Arra
             vectorial_index (3)), giving the two transverse unit vectors for
             every sky position.
     """
-    theta = jax.lax.cond(
-        isinstance(theta, float),
-        lambda theta: jnp.reshape(jnp.array([theta]), (-1,)),
-        lambda theta: jnp.reshape(jnp.array(theta), (-1,)),
-        theta,
-    )
-    phi = jax.lax.cond(
-        isinstance(phi, float),
-        lambda phi: jnp.reshape(jnp.array([phi]), (-1,)),
-        lambda phi: jnp.reshape(jnp.array(phi), (-1,)),
-        phi,
-    )
+    theta = jnp.atleast_1d(theta)
+    phi = jnp.atleast_1d(phi)
     # The output will be pixels, vectorial index
     return (
         jnp.array(
