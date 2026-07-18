@@ -10,7 +10,7 @@ readme = "README.md"
 license = { file = "LICENSE" }
 authors = [
     { name = "Mauro Pieroni", email = "mauro.pieroni@cern.ch" },
-    { name = "James Alvey", email = "j.b.g.alvey@uva.nl" },
+    { name = "James Alvey", email = "jbga2@cam.ac.uk" },
 ]
 requires-python = ">=3.10"
 dependencies = [
@@ -24,6 +24,22 @@ dependencies = [
     "interpax>=0.3.0",
     "h5py>=3.0.0",
 ]
+
+[project.optional-dependencies]
+test = [
+    "pytest>=8.0",
+    "flake8>=7.0",
+    "black>=24.0",
+]
+# GPU acceleration via NVIDIA CUDA 12 wheels. Installs the CUDA-enabled build
+# of JAX (which supersedes the CPU-only jaxlib pulled in by default).
+cuda = [
+    "jax[cuda12]>=0.4.25",
+]
+
+[project.urls]
+Homepage = "https://github.com/Mauropieroni/GW_response"
+Repository = "https://github.com/Mauropieroni/GW_response"
 
 [tool.setuptools.packages.find]
 include = ["gw_response*"]

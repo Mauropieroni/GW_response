@@ -201,9 +201,7 @@ class TestLISA(unittest.TestCase):
         # `t0`/`dt`/`size`/`version` attributes (TCB time in seconds) and a
         # `tcb/x` dataset of shape (size, 3, 3) for (time, satellite, xyz) in
         # meters.
-        orbit_file = os.path.join(
-            TEST_DATA_PATH, "lisaorbits_numerical_orbit_data.h5"
-        )
+        orbit_file = os.path.join(TEST_DATA_PATH, "lisaorbits_numerical_orbit_data.h5")
         with h5py.File(orbit_file, "r") as hdf5:
             t0 = float(hdf5.attrs["t0"])
             dt = float(hdf5.attrs["dt"])
@@ -225,9 +223,7 @@ class TestLISA(unittest.TestCase):
         # The LISA class should be able to drive satellite positions and
         # arms off this file end to end, without falling back to NaNs.
         lisa_numeric = gwr.LISA(orbit_approximant="numeric", orbit_file=orbit_file)
-        query_time = jnp.linspace(
-            expected_time_grid[0], expected_time_grid[-1], 50
-        )
+        query_time = jnp.linspace(expected_time_grid[0], expected_time_grid[-1], 50)
         positions = lisa_numeric.satellite_positions(query_time)
         arms = lisa_numeric.detector_arms(query_time)
         self.assertFalse(bool(jnp.any(jnp.isnan(positions))))
