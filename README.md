@@ -146,7 +146,7 @@ See [`tutorial.ipynb`](tutorial.ipynb) for a full, worked walk-through.
 | `tdi.py` | Time-delay interferometry combinations (`XYZ`, `AET`, Sagnac, …) |
 | `response.py` | `Response`: linear & quadratic response driver |
 | `noise.py` | `Noise`: test-mass and OMS noise in the TDI basis |
-| `utils.py` | HEALPix `Pixel` helper and array utilities |
+| `utils.py` | HEALPix `Pixel` helper, orbit-file loading, and shared array/geometry utilities |
 
 ## Testing
 

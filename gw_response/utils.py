@@ -1,11 +1,15 @@
 # Global imports
-import os
 import chex
+import h5py
+import interpax
 import jax
 import jax.numpy as jnp
 import jax_healpy as hp
-from jax.typing import ArrayLike
 import numpy as np
+from jax.typing import ArrayLike
+
+# Local imports
+from .constants import PhysicalConstants
 
 # Update jax configuration to enable 64-bit precision for numerical computations
 jax.config.update("jax_enable_x64", True)
@@ -153,47 +157,141 @@ def shift_to_center(
     return first_mass, second_mass, third_mass
 
 
-def coordinates_numerical(*args, **kwargs) -> jax.Array:
+@jax.jit
+def arms_matrix_from_satellite_positions(
+    m1: ArrayLike, m2: ArrayLike, m3: ArrayLike
+) -> jax.Array:
     """
-    Loads pre-computed satellite coordinates from disk.
+    Builds a constellation arm matrix (the vector difference between each
+    ordered pair of satellites) from three satellites' Cartesian positions.
 
-    This is a numerical fallback used for testing: instead of evaluating an
-    analytical orbit model, it reads previously tabulated satellite positions
-    from ``input_data/test_positions.txt``.
+    This differencing is identical regardless of which orbit model produced
+    the positions, so it is shared by the analytical, Keplerian, and
+    numerical orbit models in `gw_response.lisa`.
 
     Args:
-            *args: Ignored. Present so this function is interchangeable with the
-            analytical position functions it substitutes for.
-            **kwargs: Ignored. Present for the same reason as ``*args``.
+        m1 (ArrayLike): The Cartesian position of satellite 1.
+        m2 (ArrayLike): The Cartesian position of satellite 2.
+        m3 (ArrayLike): The Cartesian position of satellite 3.
 
     Returns:
-        jax.Array: An array of shape (3, 3, configurations) with the
-            satellite coordinates, laid out as vectorial_index, satellite, time,
-            matching the output of the analytical position functions.
+        jax.Array: A numpy array representing the arm matrix of the
+            constellation. Each row of the array corresponds to the vector
+            difference between pairs of satellites, ordered [12, 23, 31, 21,
+            32, 13].
     """
-    path = os.path.dirname(os.path.abspath(__file__))
-    data = jnp.array(np.loadtxt(path + "/input_data/test_positions.txt"))
-    return jnp.reshape(data, (data.shape[0], 3, 3)).T
+    return jnp.array(
+        [
+            m2 - m1,
+            m3 - m2,
+            m1 - m3,
+            m1 - m2,
+            m2 - m3,
+            m3 - m1,
+        ]
+    ).T
 
 
-def arms_matrix_numerical(*args, **kwargs) -> jax.Array:
+def _load_numerical_orbits_text(orbit_file: str) -> tuple[jax.Array, jax.Array]:
     """
-    Loads pre-computed detector arm lengths from disk.
+    Loads numerical satellite orbit data from a plain-text file.
 
-    This is a numerical fallback used for testing: instead of evaluating an
-    analytical orbit model, it reads previously tabulated arm-length data
-    from ``input_data/test_armlengths.txt``.
+    The file is expected to be readable by `numpy.loadtxt` and to contain 10
+    columns: time_in_years, x1, y1, z1, x2, y2, z2, x3, y3, z3, where
+    (xi, yi, zi) are the coordinates (in meters) of satellite i at the given
+    time. One row per time sample, with rows sorted by increasing time.
 
     Args:
-            *args: Ignored. Present so this function is interchangeable with the
-            analytical arm-matrix functions it substitutes for.
-            **kwargs: Ignored. Present for the same reason as ``*args``.
+        orbit_file (str): Path to the plain-text numerical orbit data file.
 
     Returns:
-        jax.Array: An array of shape (configurations, 3, 6) with the arm
-            matrix, matching the output layout of the analytical arm-matrix
-            functions (dimensions: configurations, vectorial_index, arms).
+        tuple: (time_grid, positions_grid), where time_grid has shape
+            (samples,) in years and positions_grid has shape
+            (samples, 3, 3), indexed as [time, satellite, coordinate].
     """
-    path = os.path.dirname(os.path.abspath(__file__))
-    data = np.loadtxt(path + "/input_data/test_armlengths.txt")
-    return jnp.reshape(data, (data.shape[0], 3, 6))
+    data = np.atleast_2d(np.loadtxt(orbit_file))
+    if data.shape[1] != 10:
+        raise ValueError(
+            "Numerical orbit files must have 10 columns: time_in_years, x1, "
+            "y1, z1, x2, y2, z2, x3, y3, z3. Got "
+            f"{data.shape[1]} columns instead."
+        )
+    time_grid = jnp.array(data[:, 0])
+    positions_grid = jnp.array(data[:, 1:]).reshape(data.shape[0], 3, 3)
+    return time_grid, positions_grid
+
+
+def _load_numerical_orbits_lisaorbits(orbit_file: str) -> tuple[jax.Array, jax.Array]:
+    """
+    Loads numerical satellite orbit data from an HDF5 orbit file produced by
+    the `lisaorbits` package (https://pypi.org/project/lisaorbits/).
+
+    Only the spacecraft positions (dataset `tcb/x`, shape (size, 3, 3) for
+    (time, satellite, xyz), in meters) and the TCB time grid (attributes
+    `t0` and `dt`, both in seconds, and `size`) are used; velocities,
+    accelerations, light travel times, and pseudoranges are ignored. The
+    time grid is converted from seconds to years to match this module's
+    convention.
+
+    Args:
+        orbit_file (str): Path to the HDF5 orbit file.
+
+    Returns:
+        tuple: (time_grid, positions_grid), where time_grid has shape
+            (samples,) in years and positions_grid has shape
+            (samples, 3, 3), indexed as [time, satellite, coordinate].
+    """
+    with h5py.File(orbit_file, "r") as hdf5:
+        version = str(hdf5.attrs["version"])
+        if int(version.split(".", 1)[0]) < 2:
+            raise ValueError(
+                f"Unsupported lisaorbits file version {version!r}; "
+                "gw_response requires lisaorbits format version >= 2.0."
+            )
+        t0 = float(hdf5.attrs["t0"])
+        dt = float(hdf5.attrs["dt"])
+        size = int(hdf5.attrs["size"])
+        positions_grid = jnp.array(hdf5["tcb/x"][:])
+    time_grid = (t0 + np.arange(size) * dt) / PhysicalConstants().yr
+    return jnp.array(time_grid), positions_grid
+
+
+def load_numerical_orbits(
+    orbit_file: str, interpolation_method: str = "linear"
+) -> interpax.Interpolator1D:
+    """
+    Loads numerical satellite orbit data from an external file and builds an
+    interpolator for the satellite positions.
+
+    Two file formats are supported, auto-detected from the file content:
+      - Plain-text files readable by `numpy.loadtxt`, with 10 columns:
+        time_in_years, x1, y1, z1, x2, y2, z2, x3, y3, z3. See
+        `_load_numerical_orbits_text`.
+      - HDF5 orbit files produced by the `lisaorbits` package
+        (https://pypi.org/project/lisaorbits/), format version >= 2.0. See
+        `_load_numerical_orbits_lisaorbits`.
+
+    The interpolation coefficients are computed once here (similar in spirit
+    to `scipy.interpolate.interp1d`), so evaluating the returned interpolator
+    at query times - even repeatedly inside a jit/vmap - only needs to
+    evaluate the precomputed spline rather than re-deriving it.
+
+    Args:
+        orbit_file (str): Path to the numerical orbit data file.
+        interpolation_method (str, optional): The interpolation method
+            passed to `interpax.Interpolator1D`, e.g. 'linear', 'nearest',
+            'cubic', 'cubic2', 'cardinal', 'catmull-rom', 'monotonic',
+            'monotonic-0', or 'akima'. Default is 'linear'.
+
+    Returns:
+        interpax.Interpolator1D: An interpolator mapping time (in years) to
+            satellite positions. Calling it with query time(s) returns an
+            array of shape (..., 3, 3), indexed as [satellite, coordinate].
+    """
+    if h5py.is_hdf5(orbit_file):
+        time_grid, positions_grid = _load_numerical_orbits_lisaorbits(orbit_file)
+    else:
+        time_grid, positions_grid = _load_numerical_orbits_text(orbit_file)
+    return interpax.Interpolator1D(
+        time_grid, positions_grid, method=interpolation_method
+    )
