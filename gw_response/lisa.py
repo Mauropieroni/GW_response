@@ -8,22 +8,14 @@ from functools import partial
 # Local imports
 from .constants import PhysicalConstants
 from .detector import Detector
-from .utils import arms_matrix_from_satellite_positions, load_numerical_orbits
+from .utils import (
+    arms_matrix_from_satellite_positions,
+    as_time_array,
+    load_numerical_orbits,
+)
 
 # Update jax configuration to enable 64-bit precision for numerical computations
 jax.config.update("jax_enable_x64", True)
-
-
-def _as_time_array(time_in_years):
-    """
-    Wraps a bare float `time_in_years` into a length-1 jnp array so that
-    downstream orbit functions can always assume an array-like of times.
-    """
-    return (
-        jnp.array([time_in_years])
-        if isinstance(time_in_years, float)
-        else time_in_years
-    )
 
 
 @jax.jit
@@ -882,7 +874,7 @@ class LISA(Detector):
             in years, astronomical unit, orbit eccentricity, and orbit
             calculation method.
         """
-        time_in_years = _as_time_array(time_in_years)
+        time_in_years = as_time_array(time_in_years)
         return LISA_satellite_positions(
             time_in_years,
             self.ps.AU,
@@ -909,7 +901,7 @@ class LISA(Detector):
             LISA_arms_matrix function, with parameters including time in years,
             astronomical unit, orbit eccentricity, and orbit calculation method.
         """
-        time_in_years = _as_time_array(time_in_years)
+        time_in_years = as_time_array(time_in_years)
         return LISA_arms_matrix(
             time_in_years,
             self.ps.AU,

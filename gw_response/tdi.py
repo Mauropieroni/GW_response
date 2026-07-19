@@ -231,7 +231,10 @@ def build_tdi(TDI_idx, single_link, arms_matrix_rescaled, x_vector):
     # tdi_mat has shape configuration, x_vector, TDI, arms
     tdi_mat = tdi_matrix(TDI_idx, arms_matrix_rescaled, x_vector)
 
-    # single_link has shape configuration, x_vector, arms, pixels
-
-    # linear response is configuration, x_vector, TDI, pixels
-    return jnp.einsum("...ijk,...ikl->...ijl", tdi_mat, single_link)
+    # single_link is configuration, x_vector, arms, and optionally a
+    # trailing pixels axis if it hasn't been integrated over the sky yet.
+    # The trailing "..." picks up that pixels axis when present and
+    # contributes nothing when it isn't, so this one contraction handles
+    # both shapes without branching (same idiom as the leading "..." used
+    # for the configuration axis elsewhere in this module).
+    return jnp.einsum("cijk,cik...->cij...", tdi_mat, single_link)
