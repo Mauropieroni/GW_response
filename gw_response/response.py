@@ -45,8 +45,8 @@ class Response(object):
         k_vector = unit_vec(theta_array, phi_array)
         u, v = uv_analytical(theta_array, phi_array)
 
-        positions = self.get_positions(times_in_years) / self.det.armlength
-        arms_matrix = self.get_arms(times_in_years) / self.det.armlength
+        positions_rescaled = self.get_positions(times_in_years) / self.det.armlength
+        arms_matrix_rescaled = self.get_arms(times_in_years) / self.det.armlength
         x_array = self.det.x(frequency_array)
 
         if pol == "PC":
@@ -62,10 +62,10 @@ class Response(object):
         for p in ppol.keys():
             val[p] = get_single_link_response(
                 ppol[p],
-                arms_matrix,
+                arms_matrix_rescaled,
                 k_vector,
                 x_array,
-                positions,
+                positions_rescaled,
             )
 
         return val
@@ -105,14 +105,14 @@ class Response(object):
         pol = polarization.upper()
         val = {}
 
-        arms_matrix = self.get_arms(times_in_years) / self.det.armlength
+        arms_matrix_rescaled = self.get_arms(times_in_years) / self.det.armlength
         x_array = self.det.x(frequency_array)
 
         for p in pol:
             val[2 * p] = quadratic_integrand(
                 TDI_map[TDI],
                 single_link[p],
-                arms_matrix,
+                arms_matrix_rescaled,
                 x_array,
             )
 

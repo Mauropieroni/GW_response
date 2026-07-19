@@ -67,10 +67,10 @@ def polarization_tensors_LR(u, v):
 
 
 @jax.jit
-def xi_k_no_G(unit_wavevector, x_vector, arms_mat_rescaled):
+def xi_k_no_G(unit_wavevector, x_vector, arms_matrix_rescaled):
     """x_vector is a vector over frequency (2 pi f L / c) unit_wavevector is
-    vectorial index (3), pixels arms_mat_norm is (configurations (num time
-    slices),) vectorial_index (3), arms (6)
+    vectorial index (3), pixels arms_matrix_rescaled is (configurations (num
+    time slices),) vectorial_index (3), arms (6)
 
     This returns an object with shape:
     configurations, x_vector, arms, pixels
@@ -78,7 +78,7 @@ def xi_k_no_G(unit_wavevector, x_vector, arms_mat_rescaled):
     2.5 of the present draft without G
     """
 
-    k_dot_arms = jnp.einsum("...ij,ik->...jk", arms_mat_rescaled, unit_wavevector)
+    k_dot_arms = jnp.einsum("...ij,ik->...jk", arms_matrix_rescaled, unit_wavevector)
     # These guys will be configurations, arms, pixel
     comb_plus = 1 + k_dot_arms
     comb_minus = 1 - k_dot_arms
@@ -92,14 +92,17 @@ def xi_k_no_G(unit_wavevector, x_vector, arms_mat_rescaled):
 
 
 @jax.jit
-def position_exponential(positions_detector_frame, unit_wavevector, x_vector):
+def position_exponential(positions_detector_frame_rescaled, unit_wavevector, x_vector):
     """x_vector is a vector unit_wavevector is vectorial index, pixels
-    positions_detector_frame is configurations, vectorial_index, satellite (3)
+    positions_detector_frame_rescaled is configurations, vectorial_index,
+    satellite (3)
     # Need shifted positions to get the numerical precision in the dot
     product."""
 
     # This is configurations, satellite, pixels
-    scalar = jnp.einsum("...ij,ik->...jk", positions_detector_frame, unit_wavevector)
+    scalar = jnp.einsum(
+        "...ij,ik->...jk", positions_detector_frame_rescaled, unit_wavevector
+    )
     exponent = jnp.einsum("i,...jk->...ijk", -1j * x_vector, scalar)
 
     # Output is configurations, x_vector, satellite, pixels
@@ -107,14 +110,18 @@ def position_exponential(positions_detector_frame, unit_wavevector, x_vector):
 
 
 @jax.jit
-def geometrical_factor(arms_matrix, polarization_tensor):
-    # arms_matrix is configurations, vectorial_index, arms
+def geometrical_factor(arms_matrix_rescaled, polarization_tensor):
+    # arms_matrix_rescaled is configurations, vectorial_index, arms
     # polarization_tensor is pixels, vectorial_index, vectorial_index
 
-    aux = jnp.einsum("...ik,...jk->...ijk", arms_matrix, arms_matrix / 2)
+    aux = jnp.einsum(
+        "...ik,...jk->...ijk", arms_matrix_rescaled, arms_matrix_rescaled / 2
+    )
 
     # aux is configurations, arms, vectorial_index, pixels
-    # aux = jnp.einsum("...ij,ilk->...jlk", arms_matrix, polarization_tensor.T)
+    # aux = jnp.einsum(
+    #     "...ij,ilk->...jlk", arms_matrix_rescaled, polarization_tensor.T
+    # )
 
     # the output is configurations, arms, pixels
     return jnp.einsum("...ijk,...ijl->...kl", aux, polarization_tensor.T)
@@ -136,15 +143,17 @@ def xi_k_Avec_func(arms_matrix_rescaled, unit_wavevector, x_vector, geometrical)
 
 @jax.jit
 def single_link_response(
-    positions, arms_matrix_rescaled, wavevector, x_vector, xi_k_Avec
+    positions_rescaled, arms_matrix_rescaled, wavevector, x_vector, xi_k_Avec
 ):
-    # positions is configuration, vector, masses (masses are 1,2,3)
-    all_position = jnp.concatenate(
-        (positions, jnp.roll(positions, -1, axis=-1)), axis=-1
+    # positions_rescaled is configuration, vector, masses (masses are 1,2,3)
+    all_positions_rescaled = jnp.concatenate(
+        (positions_rescaled, jnp.roll(positions_rescaled, -1, axis=-1)), axis=-1
     )
 
     # exp has shape configurations, x_vector, arms, pixels
-    position_exp_factor = position_exponential(all_position, wavevector, x_vector)
+    position_exp_factor = position_exponential(
+        all_positions_rescaled, wavevector, x_vector
+    )
 
     # this guy will be configurations, x_vector, arms
     t_retarded_factor = arm_length_exponential(arms_matrix_rescaled, x_vector)
@@ -168,7 +177,7 @@ def single_link_response(
 
 @jax.jit
 def get_single_link_response(
-    polarization, arms_matrix_rescaled, wavevector, x_vector, positions
+    polarization, arms_matrix_rescaled, wavevector, x_vector, positions_rescaled
 ):
     # This computes the geometrical factor
     geometrical = geometrical_factor(arms_matrix_rescaled, polarization)
@@ -178,7 +187,7 @@ def get_single_link_response(
 
     # This will be configurations, x_vector, arms, pixels
     return single_link_response(
-        positions, arms_matrix_rescaled, wavevector, x_vector, xi_k_vec
+        positions_rescaled, arms_matrix_rescaled, wavevector, x_vector, xi_k_vec
     )
 
 

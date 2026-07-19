@@ -108,7 +108,7 @@ class TestTDI(unittest.TestCase):
         u, v = gwr.uv_analytical(theta, phi)
         e1L, _ = gwr.polarization_tensors_LR(u, v)
         geomtrical_factor = gwr.geometrical_factor(
-            arms_matrix=lisa.detector_arms(0.0) / lisa.armlength,
+            arms_matrix_rescaled=lisa.detector_arms(0.0) / lisa.armlength,
             polarization_tensor=e1L,
         )
         xi_k_Avec = gwr.xi_k_Avec_func(
@@ -118,7 +118,7 @@ class TestTDI(unittest.TestCase):
             geometrical=geomtrical_factor,
         )
         single_link_response = gwr.single_link_response(
-            positions=lisa.satellite_positions(0.0) / lisa.armlength,
+            positions_rescaled=lisa.satellite_positions(0.0) / lisa.armlength,
             arms_matrix_rescaled=lisa.detector_arms(0.0) / lisa.armlength,
             wavevector=unit_vector,
             x_vector=lisa.x(freqs),
@@ -170,7 +170,7 @@ class TestTDI(unittest.TestCase):
         u, v = gwr.uv_analytical(theta, phi)
         e1L, _ = gwr.polarization_tensors_LR(u, v)
         geomtrical_factor = gwr.geometrical_factor(
-            arms_matrix=lisa.detector_arms(0.0) / lisa.armlength,
+            arms_matrix_rescaled=lisa.detector_arms(0.0) / lisa.armlength,
             polarization_tensor=e1L,
         )
         xi_k_Avec = gwr.xi_k_Avec_func(
@@ -180,7 +180,7 @@ class TestTDI(unittest.TestCase):
             geometrical=geomtrical_factor,
         )
         single_link_response = gwr.single_link_response(
-            positions=lisa.satellite_positions(0.0) / lisa.armlength,
+            positions_rescaled=lisa.satellite_positions(0.0) / lisa.armlength,
             arms_matrix_rescaled=lisa.detector_arms(0.0) / lisa.armlength,
             wavevector=unit_vector,
             x_vector=lisa.x(freqs),
