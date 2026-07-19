@@ -147,7 +147,7 @@ def polarization_tensors_LR(u: ArrayLike, v: ArrayLike) -> tuple[jax.Array, jax.
 
 @jax.jit
 def xi_k_no_G(
-    unit_wavevector: ArrayLike, x_vector: ArrayLike, arms_mat_rescaled: ArrayLike
+    unit_wavevector: ArrayLike, x_vector: ArrayLike, arms_matrix_rescaled: ArrayLike
 ) -> jax.Array:
     """
     Computes the finite-arm-length transfer function of the single-link
@@ -159,8 +159,8 @@ def xi_k_no_G(
             (vectorial_index (3), pixels).
         x_vector (ArrayLike): Vector of ``2 pi f L / c`` values over
             frequency.
-        arms_mat_rescaled (ArrayLike): Detector arm vectors rescaled by the
-            arm length, with shape (configurations, vectorial_index (3),
+        arms_matrix_rescaled (ArrayLike): Detector arm vectors rescaled by
+            the arm length, with shape (configurations, vectorial_index (3),
             arms (6)).
 
     Returns:
@@ -168,7 +168,7 @@ def xi_k_no_G(
             (configurations, x_vector, arms, pixels).
     """
 
-    k_dot_arms = jnp.einsum("...ij,ik->...jk", arms_mat_rescaled, unit_wavevector)
+    k_dot_arms = jnp.einsum("...ij,ik->...jk", arms_matrix_rescaled, unit_wavevector)
     # These guys will be configurations, arms, pixel
     comb_plus = 1 + k_dot_arms
     comb_minus = 1 - k_dot_arms
@@ -183,17 +183,20 @@ def xi_k_no_G(
 
 @jax.jit
 def position_exponential(
-    positions_detector_frame: ArrayLike, unit_wavevector: ArrayLike, x_vector: ArrayLike
+    positions_detector_frame_rescaled: ArrayLike,
+    unit_wavevector: ArrayLike,
+    x_vector: ArrayLike,
 ) -> jax.Array:
     """
     Computes the plane-wave phase factor picked up by each satellite due to
     its position relative to the detector-frame center.
 
     Args:
-        positions_detector_frame (ArrayLike): Satellite positions relative to
-            the detector-frame center (already shifted for numerical
-            precision in the dot product below), with shape (configurations,
-            vectorial_index (3), satellite (3)).
+        positions_detector_frame_rescaled (ArrayLike): Satellite positions
+            relative to the detector-frame center (already shifted for
+            numerical precision in the dot product below), rescaled by the
+            arm length, with shape (configurations, vectorial_index (3),
+            satellite (3)).
         unit_wavevector (ArrayLike): Unit wavevector(s), with shape
             (vectorial_index (3), pixels).
         x_vector (ArrayLike): Vector of ``2 pi f L / c`` values over
@@ -205,7 +208,9 @@ def position_exponential(
     """
 
     # This is configurations, satellite, pixels
-    scalar = jnp.einsum("...ij,ik->...jk", positions_detector_frame, unit_wavevector)
+    scalar = jnp.einsum(
+        "...ij,ik->...jk", positions_detector_frame_rescaled, unit_wavevector
+    )
     exponent = jnp.einsum("i,...jk->...ijk", -1j * x_vector, scalar)
 
     # Output is configurations, x_vector, satellite, pixels
@@ -214,7 +219,7 @@ def position_exponential(
 
 @jax.jit
 def geometrical_factor(
-    arms_matrix: ArrayLike, polarization_tensor: ArrayLike
+    arms_matrix_rescaled: ArrayLike, polarization_tensor: ArrayLike
 ) -> jax.Array:
     """
     Projects the gravitational wave polarization tensor onto each detector
@@ -222,8 +227,9 @@ def geometrical_factor(
     response.
 
     Args:
-        arms_matrix (ArrayLike): Detector arm vectors, with shape
-            (configurations, vectorial_index (3), arms (6)).
+        arms_matrix_rescaled (ArrayLike): Detector arm vectors rescaled by
+            the arm length, with shape (configurations, vectorial_index (3),
+            arms (6)).
         polarization_tensor (ArrayLike): Polarization tensor(s) as returned
             by e.g. :func:`polarization_tensors_LR`, with shape (pixels,
             vectorial_index (3), vectorial_index (3)).
@@ -232,13 +238,17 @@ def geometrical_factor(
         jax.Array: The geometrical factor, with shape (configurations, arms,
             pixels).
     """
-    # arms_matrix is configurations, vectorial_index, arms
+    # arms_matrix_rescaled is configurations, vectorial_index, arms
     # polarization_tensor is pixels, vectorial_index, vectorial_index
 
-    aux = jnp.einsum("...ik,...jk->...ijk", arms_matrix, arms_matrix / 2)
+    aux = jnp.einsum(
+        "...ik,...jk->...ijk", arms_matrix_rescaled, arms_matrix_rescaled / 2
+    )
 
     # aux is configurations, arms, vectorial_index, pixels
-    # aux = jnp.einsum("...ij,ilk->...jlk", arms_matrix, polarization_tensor.T)
+    # aux = jnp.einsum(
+    #     "...ij,ilk->...jlk", arms_matrix_rescaled, polarization_tensor.T
+    # )
 
     # the output is configurations, arms, pixels
     return jnp.einsum("...ijk,...ijl->...kl", aux, polarization_tensor.T)
@@ -283,7 +293,7 @@ def xi_k_Avec_func(
 
 @jax.jit
 def single_link_response(
-    positions: ArrayLike,
+    positions_rescaled: ArrayLike,
     arms_matrix_rescaled: ArrayLike,
     wavevector: ArrayLike,
     x_vector: ArrayLike,
@@ -295,8 +305,9 @@ def single_link_response(
     position phase factors.
 
     Args:
-        positions (ArrayLike): Satellite positions, with shape
-            (configurations, vectorial_index (3), satellite (3)).
+        positions_rescaled (ArrayLike): Satellite positions rescaled by the
+            arm length, with shape (configurations, vectorial_index (3),
+            satellite (3)).
         arms_matrix_rescaled (ArrayLike): Detector arm vectors rescaled by
             the arm length, with shape (configurations, vectorial_index (3),
             arms (6)).
@@ -312,13 +323,15 @@ def single_link_response(
         jax.Array: The single-link strain response, with shape
             (configurations, x_vector, arms, pixels).
     """
-    # positions is configuration, vector, masses (masses are 1,2,3)
-    all_position = jnp.concatenate(
-        (positions, jnp.roll(positions, -1, axis=-1)), axis=-1
+    # positions_rescaled is configuration, vector, masses (masses are 1,2,3)
+    all_positions_rescaled = jnp.concatenate(
+        (positions_rescaled, jnp.roll(positions_rescaled, -1, axis=-1)), axis=-1
     )
 
     # exp has shape configurations, x_vector, arms, pixels
-    position_exp_factor = position_exponential(all_position, wavevector, x_vector)
+    position_exp_factor = position_exponential(
+        all_positions_rescaled, wavevector, x_vector
+    )
 
     # this guy will be configurations, x_vector, arms
     t_retarded_factor = arm_length_exponential(arms_matrix_rescaled, x_vector)
@@ -346,7 +359,7 @@ def get_single_link_response(
     arms_matrix_rescaled: ArrayLike,
     wavevector: ArrayLike,
     x_vector: ArrayLike,
-    positions: ArrayLike,
+    positions_rescaled: ArrayLike,
 ) -> jax.Array:
     """
     Computes the single-link strain response for a given polarization
@@ -365,8 +378,9 @@ def get_single_link_response(
             (vectorial_index (3), pixels).
         x_vector (ArrayLike): Vector of ``2 pi f L / c`` values over
             frequency.
-        positions (ArrayLike): Satellite positions, with shape
-            (configurations, vectorial_index (3), satellite (3)).
+        positions_rescaled (ArrayLike): Satellite positions rescaled by the
+            arm length, with shape (configurations, vectorial_index (3),
+            satellite (3)).
 
     Returns:
         jax.Array: The single-link strain response, with shape
@@ -380,7 +394,7 @@ def get_single_link_response(
 
     # This will be configurations, x_vector, arms, pixels
     return single_link_response(
-        positions, arms_matrix_rescaled, wavevector, x_vector, xi_k_vec
+        positions_rescaled, arms_matrix_rescaled, wavevector, x_vector, xi_k_vec
     )
 
 
