@@ -12,18 +12,8 @@ jax.config.update("jax_enable_x64", True)
 
 @jax.jit
 def unit_vec(theta, phi):
-    theta = jax.lax.cond(
-        isinstance(theta, float),
-        lambda theta: jnp.reshape(jnp.array([theta]), (-1,)),
-        lambda theta: jnp.reshape(jnp.array(theta), (-1,)),
-        theta,
-    )
-    phi = jax.lax.cond(
-        isinstance(phi, float),
-        lambda phi: jnp.reshape(jnp.array([phi]), (-1,)),
-        lambda phi: jnp.reshape(jnp.array(phi), (-1,)),
-        phi,
-    )
+    theta = jnp.atleast_1d(theta)
+    phi = jnp.atleast_1d(phi)
     # The output will be vectorial index, pixels
     return jnp.array(
         [
@@ -36,18 +26,8 @@ def unit_vec(theta, phi):
 
 @jax.jit
 def uv_analytical(theta, phi):
-    theta = jax.lax.cond(
-        isinstance(theta, float),
-        lambda theta: jnp.reshape(jnp.array([theta]), (-1,)),
-        lambda theta: jnp.reshape(jnp.array(theta), (-1,)),
-        theta,
-    )
-    phi = jax.lax.cond(
-        isinstance(phi, float),
-        lambda phi: jnp.reshape(jnp.array([phi]), (-1,)),
-        lambda phi: jnp.reshape(jnp.array(phi), (-1,)),
-        phi,
-    )
+    theta = jnp.atleast_1d(theta)
+    phi = jnp.atleast_1d(phi)
     # The output will be pixels, vectorial index
     return (
         jnp.array(
