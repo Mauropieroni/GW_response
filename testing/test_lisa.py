@@ -2,9 +2,22 @@ import unittest
 import jax.numpy as jnp
 import gw_response as gwr
 import os
+import tempfile
 import numpy as np
+import h5py
 
 TEST_DATA_PATH = os.path.join(os.path.dirname(__file__), "test_data/")
+
+
+def write_numerical_orbit_file(path, time_grid, orbit_radius, eccentricity):
+    positions = gwr.LISA_satellite_coordinates_analytical_vm(
+        jnp.array([1, 2, 3]), time_grid, orbit_radius, eccentricity
+    )  # shape (3 satellites, 3 coordinates, N times)
+    positions = jnp.transpose(positions, (2, 0, 1))  # (N times, 3 satellites, 3 coords)
+    data = np.column_stack(
+        [np.array(time_grid), np.array(positions).reshape(len(time_grid), 9)]
+    )
+    np.savetxt(path, data)
 
 
 class TestLISA(unittest.TestCase):
@@ -70,7 +83,7 @@ class TestLISA(unittest.TestCase):
             time_in_years,
             gwr.PhysicalConstants().AU,
             eccentricity=gwr.LISA().ecc,
-            which_orbits="analytic",  # Currently only analytic implemented
+            orbit_approximant="rigid",
         )
         save_arr = np.load(TEST_DATA_PATH + "lisa_satellite_positions.npy")
         self.assertAlmostEqual(
@@ -123,6 +136,191 @@ class TestLISA(unittest.TestCase):
             jnp.sum(jnp.abs(arms_matrix - save_arr)) / np.max(save_arr),
             0.0,
         )
+
+    def test_load_numerical_orbits(self):
+        orbit_radius = gwr.PhysicalConstants().AU
+        eccentricity = gwr.LISA().ecc
+        time_grid = jnp.linspace(0, 1.0, 50)
+        expected_positions = jnp.transpose(
+            gwr.LISA_satellite_coordinates_analytical_vm(
+                jnp.array([1, 2, 3]), time_grid, orbit_radius, eccentricity
+            ),
+            (2, 0, 1),
+        )  # (N times, 3 satellites, 3 coords), matching orbit_interpolator.f layout
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            orbit_file = os.path.join(tmp_dir, "orbits.txt")
+            write_numerical_orbit_file(
+                orbit_file, time_grid, orbit_radius, eccentricity
+            )
+            orbit_interpolator = gwr.load_numerical_orbits(orbit_file)
+        self.assertEqual(orbit_interpolator.f.shape, (50, 3, 3))
+        self.assertAlmostEqual(jnp.sum(jnp.abs(orbit_interpolator.x - time_grid)), 0.0)
+        # Round trip: the stored positions, once loaded back, must match what
+        # was written (catches e.g. a column/reshape mixup in
+        # `load_numerical_orbits`), both in the raw stored knots and when
+        # queried through the interpolator at those same knot times.
+        self.assertAlmostEqual(
+            jnp.sum(jnp.abs(orbit_interpolator.f - expected_positions))
+            / jnp.max(jnp.abs(expected_positions)),
+            0.0,
+        )
+        queried_positions = orbit_interpolator(time_grid)
+        self.assertAlmostEqual(
+            jnp.sum(jnp.abs(queried_positions - expected_positions))
+            / jnp.max(jnp.abs(expected_positions)),
+            0.0,
+        )
+
+    def test_load_numerical_orbits_interpolation_method(self):
+        orbit_radius = gwr.PhysicalConstants().AU
+        eccentricity = gwr.LISA().ecc
+        time_grid = jnp.linspace(0, 1.0, 50)
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            orbit_file = os.path.join(tmp_dir, "orbits.txt")
+            write_numerical_orbit_file(
+                orbit_file, time_grid, orbit_radius, eccentricity
+            )
+            linear_interpolator = gwr.load_numerical_orbits(orbit_file)
+            cubic_interpolator = gwr.load_numerical_orbits(
+                orbit_file, interpolation_method="cubic"
+            )
+        self.assertEqual(linear_interpolator.method, "linear")
+        self.assertEqual(cubic_interpolator.method, "cubic")
+
+    def test_load_numerical_orbits_wrong_columns(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            orbit_file = os.path.join(tmp_dir, "orbits.txt")
+            np.savetxt(orbit_file, np.zeros((10, 4)))
+            with self.assertRaises(ValueError):
+                gwr.load_numerical_orbits(orbit_file)
+
+    def test_load_numerical_orbits_lisaorbits_hdf5(self):
+        # Fixture generated with `lisaorbits.KeplerianOrbits().write(path,
+        # dt=100000.0, size=30, mode="w")` (lisaorbits 3.1.0), exercising the
+        # real HDF5 format produced by that package: an HDF5 file with
+        # `t0`/`dt`/`size`/`version` attributes (TCB time in seconds) and a
+        # `tcb/x` dataset of shape (size, 3, 3) for (time, satellite, xyz) in
+        # meters.
+        orbit_file = os.path.join(TEST_DATA_PATH, "lisaorbits_numerical_orbit_data.h5")
+        with h5py.File(orbit_file, "r") as hdf5:
+            t0 = float(hdf5.attrs["t0"])
+            dt = float(hdf5.attrs["dt"])
+            size = int(hdf5.attrs["size"])
+            expected_positions = jnp.array(hdf5["tcb/x"][:])
+        expected_time_grid = (t0 + jnp.arange(size) * dt) / gwr.PhysicalConstants().yr
+
+        orbit_interpolator = gwr.load_numerical_orbits(orbit_file)
+        self.assertEqual(orbit_interpolator.f.shape, (size, 3, 3))
+        self.assertAlmostEqual(
+            jnp.sum(jnp.abs(orbit_interpolator.x - expected_time_grid)), 0.0
+        )
+        self.assertAlmostEqual(
+            jnp.sum(jnp.abs(orbit_interpolator.f - expected_positions))
+            / jnp.max(jnp.abs(expected_positions)),
+            0.0,
+        )
+
+        # The LISA class should be able to drive satellite positions and
+        # arms off this file end to end, without falling back to NaNs.
+        lisa_numeric = gwr.LISA(orbit_approximant="numeric", orbit_file=orbit_file)
+        query_time = jnp.linspace(expected_time_grid[0], expected_time_grid[-1], 50)
+        positions = lisa_numeric.satellite_positions(query_time)
+        arms = lisa_numeric.detector_arms(query_time)
+        self.assertFalse(bool(jnp.any(jnp.isnan(positions))))
+        self.assertFalse(bool(jnp.any(jnp.isnan(arms))))
+
+    def test_lisa_numerical_orbits_matches_analytical(self):
+        # The fixture file stores analytical ("rigid") positions on a coarse
+        # grid (100 points over 3 years, i.e. about 11 days apart). Querying
+        # on a much finer grid forces the loaded interpolator to genuinely
+        # interpolate between stored samples, rather than trivially landing
+        # on stored points, so this exercises real interpolation error
+        # (small, but not vanishing) rather than a machine-precision
+        # round-trip.
+        orbit_file = os.path.join(TEST_DATA_PATH, "lisa_numerical_orbit_data.txt")
+        query_time = jnp.linspace(0.01, 2.99, 5000)
+
+        lisa_analytic = gwr.LISA(orbit_approximant="rigid")
+        analytic_positions = lisa_analytic.satellite_positions(query_time)
+        analytic_arms = lisa_analytic.detector_arms(query_time)
+
+        lisa_numeric = gwr.LISA(orbit_approximant="numeric", orbit_file=orbit_file)
+        numeric_positions = lisa_numeric.satellite_positions(query_time)
+        numeric_arms = lisa_numeric.detector_arms(query_time)
+
+        # The numeric path must actually interpolate rather than silently
+        # falling through to the analytical formulas.
+        self.assertFalse(jnp.array_equal(numeric_positions, analytic_positions))
+        self.assertFalse(jnp.array_equal(numeric_arms, analytic_arms))
+
+        # Linear interpolation between coarse samples of a smooth orbit
+        # should still stay close to the analytical model.
+        position_error = jnp.max(
+            jnp.abs(numeric_positions - analytic_positions)
+        ) / jnp.max(jnp.abs(analytic_positions))
+        arms_error = jnp.max(jnp.abs(numeric_arms - analytic_arms)) / jnp.max(
+            jnp.abs(analytic_arms)
+        )
+        self.assertLess(position_error, 1e-2)
+        self.assertLess(arms_error, 1e-2)
+
+    def test_lisa_numeric_orbits_requires_orbit_file(self):
+        with self.assertRaises(ValueError):
+            gwr.LISA(orbit_approximant="numeric")
+
+    def test_lisa_orbit_interpolation_method(self):
+        orbit_radius = gwr.PhysicalConstants().AU
+        eccentricity = gwr.LISA().ecc
+        dense_time_grid = jnp.linspace(-0.1, 1.1, 2000)
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            orbit_file = os.path.join(tmp_dir, "orbits.txt")
+            write_numerical_orbit_file(
+                orbit_file, dense_time_grid, orbit_radius, eccentricity
+            )
+            lisa_cubic = gwr.LISA(
+                orbit_approximant="numeric",
+                orbit_file=orbit_file,
+                orbit_interpolation_method="cubic",
+            )
+        self.assertEqual(lisa_cubic.orbit_interpolator.method, "cubic")
+
+    def test_lisa_unknown_orbit_model(self):
+        lisa = gwr.LISA(orbit_approximant="bogus")
+        with self.assertRaises(ValueError):
+            lisa.satellite_positions(jnp.linspace(0, 1.0, 10))
+
+    def test_lisa_keplerian_orbits_are_not_rigid(self):
+        # Unlike the rigid model, the exact Keplerian model (Martens & Joffre
+        # 2021, arXiv:2101.03040) should show a small "breathing" of the
+        # constellation triangle: arm lengths and corner angles are not
+        # exactly constant.
+        time_in_years = jnp.linspace(0, 3.0, 3000)
+        lisa_keplerian = gwr.LISA(orbit_approximant="keplerian")
+        arms = lisa_keplerian.detector_arms(time_in_years)
+        arm_lengths = jnp.linalg.norm(arms[:, :, 0], axis=1)
+
+        self.assertGreater(arm_lengths.max() - arm_lengths.min(), 1e6)
+        self.assertAlmostEqual(
+            float(jnp.mean(arm_lengths)) / lisa_keplerian.armlength, 1.0, places=2
+        )
+
+    def test_lisa_keplerian_tilt_parameter_minimizes_flexing(self):
+        # The reference paper reports that a tilt parameter of 5/8 minimizes
+        # the arm length flexing of the Keplerian model.
+        time_in_years = jnp.linspace(0, 3.0, 3000)
+
+        def arm_length_range(tilt_parameter):
+            lisa_keplerian = gwr.LISA(
+                orbit_approximant="keplerian",
+                keplerian_tilt_parameter=tilt_parameter,
+            )
+            arms = lisa_keplerian.detector_arms(time_in_years)
+            arm_lengths = jnp.linalg.norm(arms[:, :, 0], axis=1)
+            return arm_lengths.max() - arm_lengths.min()
+
+        optimal_range = arm_length_range(5.0 / 8.0)
+        for tilt_parameter in [0.0, 0.3, 1.0, 1.5]:
+            self.assertLess(optimal_range, arm_length_range(tilt_parameter))
 
 
 if __name__ == "__main__":
