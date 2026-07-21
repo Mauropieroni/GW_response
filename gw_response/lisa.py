@@ -18,18 +18,6 @@ from .utils import (
 jax.config.update("jax_enable_x64", True)
 
 
-def _as_time_array(time_in_years):
-    """
-    Wraps a bare float `time_in_years` into a length-1 jnp array so that
-    downstream orbit functions can always assume an array-like of times.
-    """
-    return (
-        jnp.array([time_in_years])
-        if isinstance(time_in_years, float)
-        else time_in_years
-    )
-
-
 @jax.jit
 def LISA_alpha_par(time_in_years):
     """
