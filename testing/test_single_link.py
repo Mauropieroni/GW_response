@@ -48,7 +48,7 @@ class TestSingleLink(unittest.TestCase):
         xi_k = gwr.xi_k_no_G(
             unit_wavevector=unit_vector,
             x_vector=lisa.x(freqs),
-            arms_mat_rescaled=lisa.detector_arms(0.0) / lisa.armlength,
+            arms_matrix_rescaled=lisa.detector_arms(0.0) / lisa.armlength,
         )
         save_arr = np.load(TEST_DATA_PATH + "xi_k.npy")
         self.assertAlmostEqual(jnp.sum(jnp.abs(xi_k - save_arr)), 0.0)
@@ -67,7 +67,8 @@ class TestSingleLink(unittest.TestCase):
         )
         sp1, sp2, sp3 = gwr.shift_to_center(p1, p2, p3)
         position_exp = gwr.position_exponential(
-            positions_detector_frame=jnp.array([[sp1, sp2, sp3]]) / lisa.armlength,
+            positions_detector_frame_rescaled=jnp.array([[sp1, sp2, sp3]])
+            / lisa.armlength,
             unit_wavevector=unit_vector,
             x_vector=lisa.x(freqs),
         )
@@ -84,7 +85,7 @@ class TestSingleLink(unittest.TestCase):
         u, v = gwr.uv_analytical(theta, phi)
         e1L, _ = gwr.polarization_tensors_LR(u, v)
         geomtrical_factor = gwr.geometrical_factor(
-            arms_matrix=lisa.detector_arms(0.0) / lisa.armlength,
+            arms_matrix_rescaled=lisa.detector_arms(0.0) / lisa.armlength,
             polarization_tensor=e1L,
         )
         save_arr = np.load(TEST_DATA_PATH + "geometrical_factor.npy")
@@ -99,7 +100,7 @@ class TestSingleLink(unittest.TestCase):
         u, v = gwr.uv_analytical(theta, phi)
         e1L, _ = gwr.polarization_tensors_LR(u, v)
         geomtrical_factor = gwr.geometrical_factor(
-            arms_matrix=lisa.detector_arms(0.0) / lisa.armlength,
+            arms_matrix_rescaled=lisa.detector_arms(0.0) / lisa.armlength,
             polarization_tensor=e1L,
         )
         xi_k_Avec = gwr.xi_k_Avec_func(
@@ -120,7 +121,7 @@ class TestSingleLink(unittest.TestCase):
         u, v = gwr.uv_analytical(theta, phi)
         e1L, _ = gwr.polarization_tensors_LR(u, v)
         geomtrical_factor = gwr.geometrical_factor(
-            arms_matrix=lisa.detector_arms(0.0) / lisa.armlength,
+            arms_matrix_rescaled=lisa.detector_arms(0.0) / lisa.armlength,
             polarization_tensor=e1L,
         )
         xi_k_Avec = gwr.xi_k_Avec_func(
@@ -130,7 +131,7 @@ class TestSingleLink(unittest.TestCase):
             geometrical=geomtrical_factor,
         )
         single_link_response = gwr.single_link_response(
-            positions=lisa.satellite_positions(0.0) / lisa.armlength,
+            positions_rescaled=lisa.satellite_positions(0.0) / lisa.armlength,
             arms_matrix_rescaled=lisa.detector_arms(0.0) / lisa.armlength,
             wavevector=unit_vector,
             x_vector=lisa.x(freqs),

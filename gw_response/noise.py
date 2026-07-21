@@ -254,14 +254,14 @@ class Noise(object):
     def __post_init__(self):
         self.x_vector = self.det.x(self.frequency_array)
 
-    def get_arms_matrix(self, times_in_years):
+    def get_arms_matrix_rescaled(self, times_in_years):
         return self.det.detector_arms(times_in_years) / self.det.armlength
 
     def get_single_link_TM_noise(self, times_in_years, TM_acceleration_parameters):
         return single_link_TM_acceleration_noise_variance(
             self.frequency_array,
             TM_acceleration_parameters,
-            self.get_arms_matrix(times_in_years),
+            self.get_arms_matrix_rescaled(times_in_years),
             self.x_vector,
         )
 
@@ -269,7 +269,7 @@ class Noise(object):
         return single_link_OMS_noise_variance(
             self.frequency_array,
             OMS_parameters,
-            self.get_arms_matrix(times_in_years),
+            self.get_arms_matrix_rescaled(times_in_years),
             self.x_vector,
         )
 
@@ -280,7 +280,7 @@ class Noise(object):
             TDI_map[TDI],
             self.frequency_array,
             TM_acceleration_parameters,
-            self.get_arms_matrix(times_in_years),
+            self.get_arms_matrix_rescaled(times_in_years),
             self.x_vector,
         )
 
@@ -289,7 +289,7 @@ class Noise(object):
             TDI_map[TDI],
             self.frequency_array,
             OMS_parameters,
-            self.get_arms_matrix(times_in_years),
+            self.get_arms_matrix_rescaled(times_in_years),
             self.x_vector,
         )
 
