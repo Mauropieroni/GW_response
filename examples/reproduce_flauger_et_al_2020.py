@@ -37,17 +37,16 @@ import matplotlib.pyplot as plt
 import gw_response as gwr
 from gw_response.noise import LISA_acceleration_noise, LISA_interferometric_noise
 
-
 # --------------------------------------------------------------------------- #
 # Configuration
 # --------------------------------------------------------------------------- #
 # Write figures next to this script (in ``examples/figures/``) so the example
 # reproduces identically regardless of the current working directory.
 FIGURE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "figures")
-P_IMS_AMP = 15.0   # IMS (optical metrology) noise amplitude  [paper: P = 15]
-A_ACC_AMP = 3.0    # acceleration (test-mass) noise amplitude  [paper: A = 3]
-NSIDE = 16         # HEALPix sky resolution for the response sky-integral
-N_FREQ = 2000      # number of (log-spaced) frequency points
+P_IMS_AMP = 15.0  # IMS (optical metrology) noise amplitude  [paper: P = 15]
+A_ACC_AMP = 3.0  # acceleration (test-mass) noise amplitude  [paper: A = 3]
+NSIDE = 16  # HEALPix sky resolution for the response sky-integral
+N_FREQ = 2000  # number of (log-spaced) frequency points
 
 # Channels to plot: label -> (TDI basis, matrix row, matrix col, colour, dash)
 CHANNELS = {
@@ -91,24 +90,24 @@ def build_detector_quantities():
     for tdi in ("XYZ", "AET"):
         noise.compute_detector(
             times,
-            jnp.full(6, A_ACC_AMP),   # TM_acceleration_parameters  (A)
-            jnp.full(6, P_IMS_AMP),   # OMS_parameters              (P)
+            jnp.full(6, A_ACC_AMP),  # TM_acceleration_parameters  (A)
+            jnp.full(6, P_IMS_AMP),  # OMS_parameters              (P)
             TDI=tdi,
         )
 
     # Geometry prefactor of eq. (2.22): R_ij = 16 sin^2(x) x^2 R~_ij, x=2pifL/c
     x_L = 2.0 * np.pi * f * L / c
-    geom_prefactor = 16.0 * np.sin(x_L) ** 2 * x_L ** 2
+    geom_prefactor = 16.0 * np.sin(x_L) ** 2 * x_L**2
 
     data = {"f": f, "geom_prefactor": geom_prefactor}
     for label, (tdi, i, j, _c, _d) in CHANNELS.items():
         R = np.asarray(response.quadratic_integrated[tdi]["LL"])[0, :, i, j].real
         N = np.asarray(noise.noise_matrix[tdi])[0, :, i, j].real
         data[label] = {
-            "R": R,                          # full response function      (Fig 3 R)
-            "Rtilde": R / geom_prefactor,    # geometrical factor          (Fig 3 R~)
-            "N": N,                          # noise spectrum              (Fig 2 N)
-            "Sn": N / R,                     # strain sensitivity S_n=N/R  (Fig 2 sqrt)
+            "R": R,  # full response function      (Fig 3 R)
+            "Rtilde": R / geom_prefactor,  # geometrical factor          (Fig 3 R~)
+            "N": N,  # noise spectrum              (Fig 2 N)
+            "Sn": N / R,  # strain sensitivity S_n=N/R  (Fig 2 sqrt)
         }
     return det, data
 
@@ -119,8 +118,8 @@ def verify(det, data):
     x_L = 2.0 * np.pi * f * L / c
 
     # Analytic noise spectra, eqs (2.7)-(2.9) & (2.17)
-    Pacc = A_ACC_AMP ** 2 * np.asarray(LISA_acceleration_noise(jnp.asarray(f), 1.0))
-    Pims = P_IMS_AMP ** 2 * np.asarray(LISA_interferometric_noise(jnp.asarray(f), 1.0))
+    Pacc = A_ACC_AMP**2 * np.asarray(LISA_acceleration_noise(jnp.asarray(f), 1.0))
+    Pims = P_IMS_AMP**2 * np.asarray(LISA_interferometric_noise(jnp.asarray(f), 1.0))
     Naa = 16 * np.sin(x_L) ** 2 * ((3 + np.cos(2 * x_L)) * Pacc + Pims)
     Nab = -8 * np.sin(x_L) ** 2 * np.cos(x_L) * (4 * Pacc + Pims)
     analytic_N = {"XX": Naa, "XY": Nab, "AA": Naa - Nab, "TT": Naa + 2 * Nab}
@@ -130,11 +129,15 @@ def verify(det, data):
 
     print("Verification against arXiv:2009.11845 (max relative error):")
     for label in CHANNELS:
-        n_err = np.max(np.abs(data[label]["N"] - analytic_N[label])
-                       / (np.abs(analytic_N[label]) + 1e-300))
+        n_err = np.max(
+            np.abs(data[label]["N"] - analytic_N[label])
+            / (np.abs(analytic_N[label]) + 1e-300)
+        )
         r0 = data[label]["Rtilde"][0]
-        print(f"  {label}:  N_ij vs analytic = {n_err:.2e}"
-              f"   R~_ij(f->0) = {r0:+.4f}  (paper {analytic_Rtilde0[label]:+.3f})")
+        print(
+            f"  {label}:  N_ij vs analytic = {n_err:.2e}"
+            f"   R~_ij(f->0) = {r0:+.4f}  (paper {analytic_Rtilde0[label]:+.3f})"
+        )
     print()
 
 
@@ -144,10 +147,20 @@ def plot_figure2(data):
     fig, (axL, axR) = plt.subplots(1, 2, figsize=(11, 4.2))
 
     for label, (_t, _i, _j, colour, dash) in CHANNELS.items():
-        axL.loglog(f, np.abs(data[label]["N"]), dash, color=colour,
-                   label=rf"$N_{{\rm {label}}}$")
-        axR.loglog(f, np.sqrt(np.abs(data[label]["Sn"])), dash, color=colour,
-                   label=rf"$\sqrt{{|S_n^{{\rm {label}}}|}}$")
+        axL.loglog(
+            f,
+            np.abs(data[label]["N"]),
+            dash,
+            color=colour,
+            label=rf"$N_{{\rm {label}}}$",
+        )
+        axR.loglog(
+            f,
+            np.sqrt(np.abs(data[label]["Sn"])),
+            dash,
+            color=colour,
+            label=rf"$\sqrt{{|S_n^{{\rm {label}}}|}}$",
+        )
 
     axL.set_title("LISA noise spectra")
     axL.set_xlabel("Frequency [Hz]")
@@ -175,10 +188,20 @@ def plot_figure3(data):
     fig, (axL, axR) = plt.subplots(1, 2, figsize=(11, 4.2))
 
     for label, (_t, _i, _j, colour, dash) in CHANNELS.items():
-        axL.loglog(f, np.abs(data[label]["Rtilde"]), dash, color=colour,
-                   label=rf"$\tilde R_{{\rm {label}}}$")
-        axR.loglog(f, np.abs(data[label]["R"]), dash, color=colour,
-                   label=rf"$\mathcal{{R}}_{{\rm {label}}}$")
+        axL.loglog(
+            f,
+            np.abs(data[label]["Rtilde"]),
+            dash,
+            color=colour,
+            label=rf"$\tilde R_{{\rm {label}}}$",
+        )
+        axR.loglog(
+            f,
+            np.abs(data[label]["R"]),
+            dash,
+            color=colour,
+            label=rf"$\mathcal{{R}}_{{\rm {label}}}$",
+        )
 
     axL.set_title("LISA geometrical factors")
     axL.set_xlabel("Frequency [Hz]")
@@ -188,7 +211,7 @@ def plot_figure3(data):
     axR.set_title("LISA response functions")
     axR.set_xlabel("Frequency [Hz]")
     axR.set_ylabel(r"$\mathcal{R}(f)$")
-    axR.set_ylim(1e-13, 1e1)
+    axR.set_ylim(1e-13, 2e1)
 
     for ax in (axL, axR):
         ax.set_xlim(f[0], f[-1])
