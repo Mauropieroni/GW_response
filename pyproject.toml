@@ -1,44 +1,48 @@
 [build-system]
-requires = ["setuptools>=61.0", "wheel"]
+requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "gw_response"
-version = "0.1.0"
-description = "Code for fast PTA forecasts"
+version = "1.0.0"
+description = "A jit-enhanced python code to compute the response function of some GW interferometer"
 readme = "README.md"
-requires-python = ">=3.8"
+license = { text = "GNU General Public License v3.0 only" }
+keywords = ["LISA", "LVK", "GWs"]
 authors = [
     { name = "Mauro Pieroni", email = "mauro.pieroni@csic.es" },
     { name = "James Alvey", email = "jbga2@cam.ac.uk" },
     { name = "Androniki Dimitriou", email = "androniki.dimitriou@ific.uv.es" },
 ]
-license = { text = "GNU General Public License v3.0 only" }
-keywords = ["LISA", "LVK", "GWs"]
-urls = { Homepage = "https://github.com/Mauropieroni/gw_response/" }
-
+requires-python = ">=3.10"
 dependencies = [
-    "numpy>=1.26.4; python_version>='3.9'",
-    "numpy==1.24.4; python_version<'3.9'",
-    "jax>=0.4.25; python_version>='3.9'",
-    "jax==0.4.13; python_version<'3.9'",
-    "jaxlib>=0.4.25; python_version>='3.9'",
-    "jaxlib==0.4.13; python_version<'3.9'",
-    "chex>=0.1.85; python_version>='3.9'",
-    "chex==0.1.7; python_version<'3.9'",
-    "healpy>=1.16.6; python_version>='3.9'",
-    "healpy==1.16.2; python_version<'3.9'",
-    "typing_extensions==4.10.0; python_version=='3.11'",
+    "numpy>=1.26.4",
+    "jax>=0.4.25",
+    "jaxlib>=0.4.25",
+    "chex>=0.1.85",
+    "jax-healpy>=0.7; python_version>='3.11'",
+    "jax-healpy>=0.6,<0.7; python_version<'3.11'",
+    "typing_extensions>=4.10.0",
+    "interpax>=0.3.0",
+    "h5py>=3.0.0",
+    "pandas>=2.0.0",
 ]
 
 [project.optional-dependencies]
-dev = ["flake8-black>=0.3.6", "pytest"]
+test = ["pytest>=8.0", "flake8>=7.0", "black>=24.0"]
+# GPU acceleration via NVIDIA CUDA 12 wheels. Installs the CUDA-enabled build
+# of JAX (which supersedes the CPU-only jaxlib pulled in by default).
+cuda = ["jax[cuda12]>=0.4.25"]
 
-[tool.setuptools]
-packages = ["gw_response"]
+[project.urls]
+Homepage = "https://github.com/Mauropieroni/GW_response"
+Repository = "https://github.com/Mauropieroni/GW_response"
+
+[tool.setuptools.packages.find]
+include = ["gw_response*"]
 
 [tool.setuptools.package-data]
-gw_response = ["noise_data/*"]
+"gw_response.ground_based" = ["noise_data/*"]
 
 [tool.black]
 line_length = 88

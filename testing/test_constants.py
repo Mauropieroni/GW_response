@@ -19,20 +19,22 @@ class TestConstant(unittest.TestCase):
         basis_transformations = gwr.BasisTransformations()
         self.assertEqual(basis_transformations.XYZ_to_AET.shape, (3, 3))
         self.assertAlmostEqual(
-            jnp.sum(
-                jnp.abs(
-                    basis_transformations.XYZ_to_AET
-                    - jnp.array(
-                        [
-                            [-1 / jnp.sqrt(2), 0, 1 / jnp.sqrt(2)],
+            float(
+                jnp.sum(
+                    jnp.abs(
+                        basis_transformations.XYZ_to_AET
+                        - jnp.array(
                             [
-                                1 / jnp.sqrt(6),
-                                -2 / jnp.sqrt(6),
-                                1 / jnp.sqrt(6),
-                            ],
-                            [1 / jnp.sqrt(3), 1 / jnp.sqrt(3), 1 / jnp.sqrt(3)],
-                        ]
-                    ),
+                                [-1 / jnp.sqrt(2), 0, 1 / jnp.sqrt(2)],
+                                [
+                                    1 / jnp.sqrt(6),
+                                    -2 / jnp.sqrt(6),
+                                    1 / jnp.sqrt(6),
+                                ],
+                                [1 / jnp.sqrt(3), 1 / jnp.sqrt(3), 1 / jnp.sqrt(3)],
+                            ]
+                        ),
+                    )
                 )
             ),
             0.0,

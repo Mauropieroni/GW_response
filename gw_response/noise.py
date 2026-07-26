@@ -1,305 +1,108 @@
-# WORK IN PROGRESS
+from __future__ import annotations
 
 # Global imports
-import os
+import chex
+import functools
 import jax
-import jax.numpy as jnp
-import numpy as np
-from scipy.interpolate import interp1d
-
+from dataclasses import field
+from typing import TYPE_CHECKING
 
 # Local imports
-from .space_based_tdi import tdi_matrix
-from .utils import arm_length_exponential
+from .constants import PhysicalConstants
 
+if TYPE_CHECKING:
+    from .detector import Detector
 
-# update JAX configuration to enable 64-bit precision,
+# Update jax configuration to enable 64-bit precision for numerical computations
 jax.config.update("jax_enable_x64", True)
 
 
-path_to_LIGO_design = os.path.join(
-    os.path.dirname(__file__), "noise_data/aLIGODesign.txt"
-)
-data = np.loadtxt(path_to_LIGO_design)
-
-
-_ligo_freqs = data[:, 0]
-_ligo_psd = data[:, 1]
-_ligo_interp = interp1d(
-    _ligo_freqs, _ligo_psd, kind="linear", bounds_error=False, fill_value=np.nan
-)
-
-
-@jax.jit
-def LISA_acceleration_noise(frequency, acc_param=3.0):
+@chex.dataclass
+class Noise(object):
     """
-    This compute the acceleration noise spectrum in frequency for a
-    certain value of the associated parameter
+    Generic per-link/projected noise computation for any Detector (e.g.
+    LISA, LIGO), mirroring the way Response wraps the single-link/combination
+    functions. Detector-specific behavior (what the per-link noise looks
+    like, and how it projects into a readout combination) is delegated to
+    the `det` object passed into each method.
 
-    Parameters
-    ----------
-    frequency : np.array (of floats)
-    acc_param : float
+    `Noise` holds no reference to any particular detector -- a detector
+    owns its `Noise` (e.g. `lisa.noise`), not the other way around, so
+    `det` is passed explicitly to every method here instead of being
+    stored on `self`.
 
-    Returns
-    ----------
-    acceleration_noise : np.array (of floats)
+    Identity-based `__hash__`/`__eq__` (overriding chex's default
+    field-based ones, which reject `Noise` as unhashable) let `self` be
+    used as a static `jax.jit` argument below -- see `Response` for the
+    full rationale. `compute_detector` stays unjitted since it mutates
+    `self`'s dict attributes.
     """
 
-    first = 1 + (4e-4 / frequency) ** 2
-    second = 1 + (frequency / 8e-3) ** 4
-    third = (2 * jnp.pi * frequency) ** (-4) * (2 * jnp.pi * frequency / 3e8) ** 2
-    # TODO: Change 3e8 to ps.light_speed
-    return acc_param**2 * 1e-30 * first * second * third
+    ps: PhysicalConstants = PhysicalConstants()
+    # The per-link noise doesn't depend on the readout combination (only its
+    # projection does), so unlike `noise_matrix` below it isn't keyed by one.
+    single_link_noise: jax.Array | None = None
+    noise_matrix: dict = field(default_factory=dict)
 
+    def __hash__(self) -> int:
+        return id(self)
 
-def LISA_interferometric_noise(frequency, inter_param=15.0):
-    """
-    This compute the interferometric noise spectrum in frequency for a
-    certain value of the associated parameter
+    def __eq__(self, other: object) -> bool:
+        return self is other
 
-    Parameters
-    ----------
-    frequency   : np.array (of floats)
-    inter_param : float
+    def get_arms_matrix_rescaled(self, det: "Detector", times_in_years):
+        return det.detector_arms(times_in_years) / det.armlength
 
-    Returns
-    ----------
-    interferometric_noise : np.array (of floats)
-    """
-
-    first = 1 + (2e-3 / frequency) ** 4
-    second = (2 * jnp.pi * frequency / 3e8) ** 2
-
-    return inter_param**2 * 1e-24 * first * second
-
-
-def LIGO_noise(frequencies):
-    """
-    Plain-Python interpolator: returns PSD at `frequencies`.
-    """
-    return jnp.array(_ligo_interp(frequencies))
-
-
-@jax.jit
-def single_link_TM_acceleration_noise_variance(
-    frequency,
-    TM_acceleration_parameters,
-    arms_matrix_rescaled,
-    x_vector,
-):
-    """
-    TM_acceleration_parameters is a vector of len 6
-    """
-
-    # the shape of t_retarded_factor is configurations, x_vector, arms
-    t_retarded_factor = arm_length_exponential(arms_matrix_rescaled, x_vector)
-
-    # This would be a diag matrix on the last 2 indexes,
-    # the shape is configurations, x_vector, arms, arms
-    t_retarded_coeffs = jnp.einsum(
-        "ij,...kj->...kij", jnp.identity(6), t_retarded_factor
-    )
-
-    # This would be a diag matrix on the last 2 indexes,
-    # the shape is configurations, x_vector, arms, arms
-    flipped_t_retarded_coeffs = jnp.einsum(
-        "ij,...kj->...kij",
-        jnp.identity(6),
-        jnp.roll(t_retarded_factor, 3, axis=-1),
-    )
-
-    # The shape will be configurations, arms, arms
-    parameters_matrix = jnp.einsum(
-        "ij,...j->...ij", jnp.identity(6), TM_acceleration_parameters**2
-    )
-
-    # The shape will be configurations, arms, arms
-    flipped_parameters_matrix = jnp.einsum(
-        "ij,...j->...ij",
-        jnp.identity(6),
-        jnp.roll(TM_acceleration_parameters**2, 3),
-    )
-
-    # The shape will be frequency
-    N_acc = LISA_acceleration_noise(frequency, acc_param=1.0)
-
-    # The shape will be configurations, frequency, arms, arms
-    noise_matrix = jnp.einsum(
-        "...ij,k->...kij", parameters_matrix + flipped_parameters_matrix, N_acc
-    )
-
-    # t_retarded_coeffs is configurations, x_vector, arms, arms
-    # flipped_parameters_matrix is configurations, arms, arms
-    # The shape will be configurations, frequency, arms, arms
-    delayed_1 = jnp.einsum(
-        "...kij,...ij->...kij", t_retarded_coeffs, flipped_parameters_matrix
-    )
-
-    delayed_2 = jnp.einsum(
-        "...kij,...ij->...kij",
-        jnp.conjugate(flipped_t_retarded_coeffs),
-        parameters_matrix,
-    )
-
-    cross_matrix = jnp.einsum(
-        "...kij,k->...kij",
-        (delayed_1 + delayed_2),
-        N_acc,
-    )
-
-    # The shape will be configurations, frequency, arms, arms
-    return noise_matrix + jnp.roll(cross_matrix, 3, axis=-1)
-
-
-@jax.jit
-def single_link_OMS_noise_variance(
-    frequency, OMS_parameters, arms_matrix_rescaled, x_vector
-):
-    """TO ADD."""
-
-    # The shape will be configurations, arms, arms
-    parameters_matrix = jnp.einsum("ij,...j->...ij", jnp.identity(6), OMS_parameters**2)
-
-    # The shape will be frequency
-    N_int = LISA_interferometric_noise(frequency, inter_param=1.0)
-
-    # The shape will be configurations, frequency, arms, arms
-    return jnp.einsum("...ij,k->...kij", parameters_matrix, N_int)
-
-
-def single_link_LIGO_noise_variance(frequencies):
-    """
-    Returns the 1D Michelson‐output PSD S_n(f) for LIGO.
-    Shape: (F,)
-    """
-    return LIGO_noise(frequencies)
-
-
-@jax.jit
-def tdi_projection(
-    TDI_idx,
-    single_link_mat,
-    arms_matrix_rescaled,
-    x_vector,
-):
-    """
-    TM_acceleration_parameters is a configuration  of len 6
-    """
-
-    # tdi_mat has shape configuration, x_vector, TDI, arms
-    tdi_mat = tdi_matrix(TDI_idx, arms_matrix_rescaled, x_vector)
-
-    # The shape will be configurations, frequency, tdi, arms
-    first_contraction = jnp.einsum("...ijk,...ikl->...ijl", tdi_mat, single_link_mat)
-
-    # The shape will be configurations, frequency, tdi, tdi
-    res = jnp.einsum("...ijk,...ilk->...ijl", jnp.conjugate(tdi_mat), first_contraction)
-
-    return res
-
-
-@jax.jit
-def _noise_TM_matrix(
-    TDI_idx,
-    frequency,
-    TM_acceleration_parameters,
-    arms_matrix_rescaled,
-    x_vector,
-):
-    """TO ADD."""
-
-    single_link_mat = single_link_TM_acceleration_noise_variance(
-        frequency, TM_acceleration_parameters, arms_matrix_rescaled, x_vector
-    )
-
-    return tdi_projection(TDI_idx, single_link_mat, arms_matrix_rescaled, x_vector)
-
-
-def noise_TM_matrix(
-    TDI_idx,
-    frequency,
-    TM_acceleration_parameters,
-    arms_matrix_rescaled,
-    x_vector,
-):
-    """TO ADD."""
-
-    if (
-        len(TM_acceleration_parameters.shape) != len(arms_matrix_rescaled.shape) - 1
-    ) or (TM_acceleration_parameters.shape[-1] != arms_matrix_rescaled.shape[-1]):
-        raise ValueError(
-            "TM_acceleration_parameters and arms_matrix_rescaled"
-            + " do not have compatible shapes",
-            TM_acceleration_parameters.shape,
-            arms_matrix_rescaled.shape,
-        )
-
-    return _noise_TM_matrix(
-        TDI_idx,
-        frequency,
-        TM_acceleration_parameters,
-        arms_matrix_rescaled,
-        x_vector,
-    )
-
-
-@jax.jit
-def _noise_OMS_matrix(
-    TDI_idx,
-    frequency,
-    OMS_parameters,
-    arms_matrix_rescaled,
-    x_vector,
-):
-    """TO ADD."""
-
-    single_link_mat = single_link_OMS_noise_variance(
-        frequency, OMS_parameters, arms_matrix_rescaled, x_vector
-    )
-
-    return tdi_projection(TDI_idx, single_link_mat, arms_matrix_rescaled, x_vector)
-
-
-def noise_OMS_matrix(
-    TDI_idx,
-    frequency,
-    OMS_parameters,
-    arms_matrix_rescaled,
-    x_vector,
-):
-    """TO ADD."""
-
-    if (len(OMS_parameters.shape) != len(arms_matrix_rescaled.shape) - 1) or (
-        OMS_parameters.shape[-1] != arms_matrix_rescaled.shape[-1]
+    @functools.partial(jax.jit, static_argnums=(0, 1))
+    def get_single_link_noise(
+        self, det: "Detector", times_in_years, frequency_array, **noise_parameters
     ):
-        raise ValueError(
-            "OMS_parameters and arms_matrix_rescaled"
-            + " do not have compatible shapes",
-            OMS_parameters.shape,
-            arms_matrix_rescaled.shape,
+        return det.single_link_noise(
+            frequency_array,
+            self.get_arms_matrix_rescaled(det, times_in_years),
+            det.x(frequency_array),
+            **noise_parameters,
         )
 
-    return _noise_OMS_matrix(
-        TDI_idx, frequency, OMS_parameters, arms_matrix_rescaled, x_vector
-    )
+    @functools.partial(jax.jit, static_argnums=(0, 1), static_argnames=("combination",))
+    def get_noise_matrix(
+        self,
+        det: "Detector",
+        times_in_years,
+        frequency_array,
+        combination=None,
+        **noise_parameters,
+    ):
+        combination = combination or det.default_combination
+        arms_matrix_rescaled = self.get_arms_matrix_rescaled(det, times_in_years)
+        x_vector = det.x(frequency_array)
+        combination_matrix = det.combination_matrix(
+            combination, arms_matrix_rescaled, x_vector
+        )
+        single_link_noise = self.get_single_link_noise(
+            det, times_in_years, frequency_array, **noise_parameters
+        )
+        return det.project_noise(combination_matrix, single_link_noise)
 
+    def compute_detector(
+        self,
+        det: "Detector",
+        times_in_years,
+        frequency_array,
+        combination=None,
+        **noise_parameters,
+    ):
+        combination = combination or det.default_combination
 
-def noise_matrix(
-    TDI_idx,
-    frequency,
-    TM_acceleration_parameters,
-    OMS_parameters,
-    arms_matrix_rescaled,
-    x_vector,
-):
-    """TO ADD."""
-    return noise_TM_matrix(
-        TDI_idx,
-        frequency,
-        TM_acceleration_parameters,
-        arms_matrix_rescaled,
-        x_vector,
-    ) + noise_OMS_matrix(
-        TDI_idx, frequency, OMS_parameters, arms_matrix_rescaled, x_vector
-    )
+        self.single_link_noise = self.get_single_link_noise(
+            det, times_in_years, frequency_array, **noise_parameters
+        )
+
+        arms_matrix_rescaled = self.get_arms_matrix_rescaled(det, times_in_years)
+        x_vector = det.x(frequency_array)
+        combination_matrix = det.combination_matrix(
+            combination, arms_matrix_rescaled, x_vector
+        )
+        self.noise_matrix[combination] = det.project_noise(
+            combination_matrix, self.single_link_noise
+        )
