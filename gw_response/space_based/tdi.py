@@ -3,8 +3,8 @@ import jax
 import jax.numpy as jnp
 
 # Local imports
-from ..constants import BasisTransformations
-from ..utils import arm_length_exponential
+from gw_response.constants import BasisTransformations
+from gw_response.utils import arm_length_exponential
 
 # Update jax configuration to enable 64-bit precision for numerical computations
 jax.config.update("jax_enable_x64", True)

@@ -16,7 +16,7 @@ does for LISA -- `LISA` is the reference implementation to mirror here.
 """
 
 # Local imports
-from ..detector import Detector
+from gw_response.detector import Detector
 
 
 class Taiji(Detector):

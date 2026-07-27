@@ -3,8 +3,8 @@ import jax
 import jax.numpy as jnp
 
 # Local imports
-from ..utils import arm_length_exponential, project_noise_matrix
-from .tdi import tdi_matrix
+from gw_response.utils import arm_length_exponential, project_noise_matrix
+from gw_response.space_based.tdi import tdi_matrix
 
 # Update jax configuration to enable 64-bit precision for numerical computations
 jax.config.update("jax_enable_x64", True)

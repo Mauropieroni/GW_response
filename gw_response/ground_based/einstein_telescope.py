@@ -19,7 +19,7 @@ the same way `ground_based/ligo.py` does for LIGO.
 """
 
 # Local imports
-from ..detector import Detector
+from gw_response.detector import Detector
 
 
 class EinsteinTelescope(Detector):

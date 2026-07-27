@@ -7,11 +7,11 @@ from abc import ABC, abstractmethod
 from typing import Any, TYPE_CHECKING
 
 # Local imports
-from .utils import as_time_array
+from gw_response.utils import as_time_array
 
 if TYPE_CHECKING:
-    from .noise import Noise
-    from .response import Response
+    from gw_response.noise import Noise
+    from gw_response.response import Response
 
 
 class Detector(ABC):

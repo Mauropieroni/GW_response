@@ -8,10 +8,10 @@ from dataclasses import field
 from typing import TYPE_CHECKING
 
 # Local imports
-from .constants import PhysicalConstants
+from gw_response.constants import PhysicalConstants
 
 if TYPE_CHECKING:
-    from .detector import Detector
+    from gw_response.detector import Detector
 
 # Update jax configuration to enable 64-bit precision for numerical computations
 jax.config.update("jax_enable_x64", True)

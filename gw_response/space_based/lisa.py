@@ -6,21 +6,21 @@ import chex
 from dataclasses import field
 
 # Local imports
-from ..constants import PhysicalConstants
-from ..detector import Detector
-from ..noise import Noise
-from ..response import Response, quadratic_response_integrated
-from ..utils import (
+from gw_response.constants import PhysicalConstants
+from gw_response.detector import Detector
+from gw_response.noise import Noise
+from gw_response.response import Response, quadratic_response_integrated
+from gw_response.utils import (
     combine_single_link,
     load_numerical_orbits,
     project_noise_matrix,
 )
-from .noise import (
+from gw_response.space_based.noise import (
     single_link_OMS_noise_variance,
     single_link_TM_acceleration_noise_variance,
 )
-from .orbits import LISA_arms_matrix, LISA_satellite_positions
-from .tdi import TDI_map, tdi_matrix
+from gw_response.space_based.orbits import LISA_arms_matrix, LISA_satellite_positions
+from gw_response.space_based.tdi import TDI_map, tdi_matrix
 
 # Update jax configuration to enable 64-bit precision for numerical computations
 jax.config.update("jax_enable_x64", True)

@@ -8,7 +8,7 @@ import jax_healpy as hp
 import numpy as np
 
 # Local imports
-from .constants import PhysicalConstants
+from gw_response.constants import PhysicalConstants
 
 # Update jax configuration to enable 64-bit precision for numerical computations
 jax.config.update("jax_enable_x64", True)

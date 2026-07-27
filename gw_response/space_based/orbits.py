@@ -4,7 +4,7 @@ import jax.numpy as jnp
 from functools import partial
 
 # Local imports
-from ..utils import arms_matrix_from_vertex_positions
+from gw_response.utils import arms_matrix_from_vertex_positions
 
 # Update jax configuration to enable 64-bit precision for numerical computations
 jax.config.update("jax_enable_x64", True)

@@ -9,12 +9,12 @@ from dataclasses import field
 from scipy.interpolate import interp1d
 
 # Local imports
-from ..constants import PhysicalConstants
-from ..detector import Detector
-from ..noise import Noise
-from ..response import Response
-from ..utils import combine_single_link
-from .datastream import detector_output
+from gw_response.constants import PhysicalConstants
+from gw_response.detector import Detector
+from gw_response.noise import Noise
+from gw_response.response import Response
+from gw_response.utils import combine_single_link
+from gw_response.ground_based.datastream import detector_output
 
 # -----------------------------------------------------------------------------
 # -- Earth & Arm Constants ---------------------------------------------------
@@ -25,9 +25,7 @@ LIGOARM = 4e3  # LIGO arm length in meters
 # -----------------------------------------------------------------------------
 # -- LIGO Design Sensitivity Curve --------------------------------------------
 # -----------------------------------------------------------------------------
-_path_to_LIGO_design = os.path.join(
-    os.path.dirname(__file__), "noise_data", "LIGO.pkl"
-)
+_path_to_LIGO_design = os.path.join(os.path.dirname(__file__), "noise_data", "LIGO.pkl")
 _ligo_design_curves = pd.read_pickle(_path_to_LIGO_design)
 
 _ligo_freqs = np.asarray(_ligo_design_curves["Frequency"])

@@ -7,18 +7,18 @@ import jax.numpy as jnp
 from dataclasses import field
 from typing import TYPE_CHECKING
 
-from .constants import PhysicalConstants
-from .single_link import (
+from gw_response.constants import PhysicalConstants
+from gw_response.single_link import (
     unit_vec,
     uv_analytical,
     polarization_tensors_LR,
     polarization_tensors_PC,
     get_single_link_response,
 )
-from .space_based.tdi import tdi_matrix
+from gw_response.space_based.tdi import tdi_matrix
 
 if TYPE_CHECKING:
-    from .detector import Detector
+    from gw_response.detector import Detector
 
 
 @jax.jit
