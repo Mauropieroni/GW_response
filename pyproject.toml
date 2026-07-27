@@ -25,7 +25,6 @@ dependencies = [
     "typing_extensions>=4.10.0",
     "interpax>=0.3.0",
     "h5py>=3.0.0",
-    "pandas>=2.0.0",
 ]
 
 [project.optional-dependencies]

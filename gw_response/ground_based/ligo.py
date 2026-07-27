@@ -4,9 +4,8 @@ import jax
 import jax.numpy as jnp
 import chex
 import numpy as np
-import pandas as pd
+import interpax
 from dataclasses import field
-from scipy.interpolate import interp1d
 
 # Local imports
 from gw_response.constants import PhysicalConstants
@@ -25,35 +24,24 @@ LIGOARM = 4e3  # LIGO arm length in meters
 # -----------------------------------------------------------------------------
 # -- LIGO Design Sensitivity Curve --------------------------------------------
 # -----------------------------------------------------------------------------
-_path_to_LIGO_design = os.path.join(os.path.dirname(__file__), "noise_data", "LIGO.pkl")
-_ligo_design_curves = pd.read_pickle(_path_to_LIGO_design)
-
-_ligo_freqs = np.asarray(_ligo_design_curves["Frequency"])
-_ligo_psd = np.asarray(_ligo_design_curves["Mid high/Late low"])
-_ligo_interp = interp1d(
-    _ligo_freqs,
-    _ligo_psd,
-    kind="linear",
-    bounds_error=False,
-    # scipy stubs don't type this literal
-    fill_value="extrapolate",  # type: ignore[arg-type]
+_path_to_LIGO_design = os.path.join(os.path.dirname(__file__), "noise_data", "LIGO.npz")
+with np.load(_path_to_LIGO_design) as _ligo_design_curves:
+    _ligo_freqs = _ligo_design_curves["Frequency"]
+    _ligo_psd = _ligo_design_curves["Mid high/Late low"]
+_ligo_interp = interpax.Interpolator1D(
+    _ligo_freqs, _ligo_psd, method="linear", extrap=True
 )
 
 
 def LIGO_noise(frequencies):
     """
     Returns the LIGO design PSD at `frequencies`, interpolated from the
-    tabulated design curve. `_ligo_interp` is a plain scipy/numpy
-    interpolator, not a jax-traceable operation, so this goes through
-    `jax.pure_callback` -- letting it be called with a concrete array
-    (outside jit) or with a traced one (e.g. from a jitted caller like
-    `Noise.get_single_link_noise`) alike.
+    tabulated design curve. `_ligo_interp` is a jax-traceable
+    `interpax.Interpolator1D`, so it can be called directly with either a
+    concrete array (outside jit) or a traced one (e.g. from a jitted caller
+    like `Noise.get_single_link_noise`).
     """
-    frequencies = jnp.asarray(frequencies)
-    result_shape = jax.ShapeDtypeStruct(frequencies.shape, jnp.float64)
-    return jax.pure_callback(
-        lambda f: np.asarray(_ligo_interp(f)), result_shape, frequencies
-    )
+    return _ligo_interp(jnp.asarray(frequencies))
 
 
 def single_link_LIGO_noise_variance(frequencies):
