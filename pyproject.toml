@@ -7,10 +7,12 @@ name = "gw_response"
 version = "1.0.0"
 description = "A jit-enhanced python code to compute the response function of some GW interferometer"
 readme = "README.md"
-license = { file = "LICENSE" }
+license = { text = "GNU General Public License v3.0 only" }
+keywords = ["LISA", "LVK", "GWs"]
 authors = [
-    { name = "Mauro Pieroni", email = "mauro.pieroni@cern.ch" },
+    { name = "Mauro Pieroni", email = "mauro.pieroni@csic.es" },
     { name = "James Alvey", email = "jbga2@cam.ac.uk" },
+    { name = "Androniki Dimitriou", email = "androniki.dimitriou@ific.uv.es" },
 ]
 requires-python = ">=3.10"
 dependencies = [
@@ -26,16 +28,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-test = [
-    "pytest>=8.0",
-    "flake8>=7.0",
-    "black>=24.0",
-]
+test = ["pytest>=8.0", "flake8>=7.0", "black>=24.0"]
 # GPU acceleration via NVIDIA CUDA 12 wheels. Installs the CUDA-enabled build
 # of JAX (which supersedes the CPU-only jaxlib pulled in by default).
-cuda = [
-    "jax[cuda12]>=0.4.25",
-]
+cuda = ["jax[cuda12]>=0.4.25"]
 # Sphinx documentation build (also used by Read the Docs).
 docs = [
     "sphinx>=7.0",
@@ -50,6 +46,9 @@ Repository = "https://github.com/Mauropieroni/GW_response"
 
 [tool.setuptools.packages.find]
 include = ["gw_response*"]
+
+[tool.setuptools.package-data]
+"gw_response.ground_based" = ["noise_data/*"]
 
 [tool.black]
 line_length = 88

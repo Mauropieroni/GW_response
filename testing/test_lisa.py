@@ -117,14 +117,14 @@ class TestLISA(unittest.TestCase):
         lisa = gwr.LISA()
         frequencies = lisa.frequency_vec(10)
         save_arr = np.load(TEST_DATA_PATH + "frequencies.npy")
-        self.assertAlmostEqual(jnp.sum(jnp.abs(frequencies - save_arr)), 0.0)
+        self.assertAlmostEqual(float(jnp.sum(jnp.abs(frequencies - save_arr))), 0.0)
         kl_vector = lisa.klvector(frequencies)
         save_arr = np.load(TEST_DATA_PATH + "kl_vector.npy")
-        self.assertAlmostEqual(jnp.sum(jnp.abs(kl_vector - save_arr)), 0.0)
+        self.assertAlmostEqual(float(jnp.sum(jnp.abs(kl_vector - save_arr))), 0.0)
         x_vector = lisa.x(frequencies)
         save_arr = np.load(TEST_DATA_PATH + "x_vector.npy")
-        self.assertAlmostEqual(jnp.sum(jnp.abs(x_vector - save_arr)), 0.0)
-        satellite_positions = lisa.satellite_positions(time_in_years)
+        self.assertAlmostEqual(float(jnp.sum(jnp.abs(x_vector - save_arr))), 0.0)
+        satellite_positions = lisa.vertex_positions(time_in_years)
         save_arr = np.load(TEST_DATA_PATH + "satellite_positions.npy")
         self.assertAlmostEqual(
             jnp.sum(jnp.abs(satellite_positions - save_arr)) / np.max(save_arr),
@@ -154,20 +154,26 @@ class TestLISA(unittest.TestCase):
             )
             orbit_interpolator = gwr.load_numerical_orbits(orbit_file)
         self.assertEqual(orbit_interpolator.f.shape, (50, 3, 3))
-        self.assertAlmostEqual(jnp.sum(jnp.abs(orbit_interpolator.x - time_grid)), 0.0)
+        self.assertAlmostEqual(
+            float(jnp.sum(jnp.abs(orbit_interpolator.x - time_grid))), 0.0
+        )
         # Round trip: the stored positions, once loaded back, must match what
         # was written (catches e.g. a column/reshape mixup in
         # `load_numerical_orbits`), both in the raw stored knots and when
         # queried through the interpolator at those same knot times.
         self.assertAlmostEqual(
-            jnp.sum(jnp.abs(orbit_interpolator.f - expected_positions))
-            / jnp.max(jnp.abs(expected_positions)),
+            float(
+                jnp.sum(jnp.abs(orbit_interpolator.f - expected_positions))
+                / jnp.max(jnp.abs(expected_positions))
+            ),
             0.0,
         )
         queried_positions = orbit_interpolator(time_grid)
         self.assertAlmostEqual(
-            jnp.sum(jnp.abs(queried_positions - expected_positions))
-            / jnp.max(jnp.abs(expected_positions)),
+            float(
+                jnp.sum(jnp.abs(queried_positions - expected_positions))
+                / jnp.max(jnp.abs(expected_positions))
+            ),
             0.0,
         )
 
@@ -203,20 +209,24 @@ class TestLISA(unittest.TestCase):
         # meters.
         orbit_file = os.path.join(TEST_DATA_PATH, "lisaorbits_numerical_orbit_data.h5")
         with h5py.File(orbit_file, "r") as hdf5:
-            t0 = float(hdf5.attrs["t0"])
-            dt = float(hdf5.attrs["dt"])
-            size = int(hdf5.attrs["size"])
-            expected_positions = jnp.array(hdf5["tcb/x"][:])
+            t0 = float(np.asarray(hdf5.attrs["t0"]).item())
+            dt = float(np.asarray(hdf5.attrs["dt"]).item())
+            size = int(np.asarray(hdf5.attrs["size"]).item())
+            dataset = hdf5["tcb/x"]
+            assert isinstance(dataset, h5py.Dataset)
+            expected_positions = jnp.array(dataset[:])
         expected_time_grid = (t0 + jnp.arange(size) * dt) / gwr.PhysicalConstants().yr
 
         orbit_interpolator = gwr.load_numerical_orbits(orbit_file)
         self.assertEqual(orbit_interpolator.f.shape, (size, 3, 3))
         self.assertAlmostEqual(
-            jnp.sum(jnp.abs(orbit_interpolator.x - expected_time_grid)), 0.0
+            float(jnp.sum(jnp.abs(orbit_interpolator.x - expected_time_grid))), 0.0
         )
         self.assertAlmostEqual(
-            jnp.sum(jnp.abs(orbit_interpolator.f - expected_positions))
-            / jnp.max(jnp.abs(expected_positions)),
+            float(
+                jnp.sum(jnp.abs(orbit_interpolator.f - expected_positions))
+                / jnp.max(jnp.abs(expected_positions))
+            ),
             0.0,
         )
 
@@ -224,7 +234,7 @@ class TestLISA(unittest.TestCase):
         # arms off this file end to end, without falling back to NaNs.
         lisa_numeric = gwr.LISA(orbit_approximant="numeric", orbit_file=orbit_file)
         query_time = jnp.linspace(expected_time_grid[0], expected_time_grid[-1], 50)
-        positions = lisa_numeric.satellite_positions(query_time)
+        positions = lisa_numeric.vertex_positions(query_time)
         arms = lisa_numeric.detector_arms(query_time)
         self.assertFalse(bool(jnp.any(jnp.isnan(positions))))
         self.assertFalse(bool(jnp.any(jnp.isnan(arms))))
@@ -241,11 +251,11 @@ class TestLISA(unittest.TestCase):
         query_time = jnp.linspace(0.01, 2.99, 5000)
 
         lisa_analytic = gwr.LISA(orbit_approximant="rigid")
-        analytic_positions = lisa_analytic.satellite_positions(query_time)
+        analytic_positions = lisa_analytic.vertex_positions(query_time)
         analytic_arms = lisa_analytic.detector_arms(query_time)
 
         lisa_numeric = gwr.LISA(orbit_approximant="numeric", orbit_file=orbit_file)
-        numeric_positions = lisa_numeric.satellite_positions(query_time)
+        numeric_positions = lisa_numeric.vertex_positions(query_time)
         numeric_arms = lisa_numeric.detector_arms(query_time)
 
         # The numeric path must actually interpolate rather than silently
@@ -282,12 +292,13 @@ class TestLISA(unittest.TestCase):
                 orbit_file=orbit_file,
                 orbit_interpolation_method="cubic",
             )
+        assert lisa_cubic.orbit_interpolator is not None
         self.assertEqual(lisa_cubic.orbit_interpolator.method, "cubic")
 
     def test_lisa_unknown_orbit_model(self):
         lisa = gwr.LISA(orbit_approximant="bogus")
         with self.assertRaises(ValueError):
-            lisa.satellite_positions(jnp.linspace(0, 1.0, 10))
+            lisa.vertex_positions(jnp.linspace(0, 1.0, 10))
 
     def test_lisa_keplerian_orbits_are_not_rigid(self):
         # Unlike the rigid model, the exact Keplerian model (Martens & Joffre

@@ -9,21 +9,28 @@ import numpy as np
 from jax.typing import ArrayLike
 
 # Local imports
-from .constants import PhysicalConstants
+from gw_response.constants import PhysicalConstants
 
 # Update jax configuration to enable 64-bit precision for numerical computations
 jax.config.update("jax_enable_x64", True)
 
 
-def as_time_array(time_in_years):
+def as_time_array(time_in_years: ArrayLike) -> jax.Array:
     """
-    Wraps a bare float `time_in_years` into a length-1 jnp array so that
-    downstream functions can always assume an array-like of times.
+    Wraps a bare scalar `time_in_years` (a Python int/float, or a 0-d array)
+    into a length-1 jnp array so that downstream functions can always assume
+    an array-like of times.
+
+    Args:
+        time_in_years (ArrayLike): A scalar or array of time(s), in years.
+
+    Returns:
+        jax.Array: `time_in_years` as an array with at least 1 dimension.
     """
     return (
         jnp.array([time_in_years])
-        if isinstance(time_in_years, float)
-        else time_in_years
+        if jnp.ndim(time_in_years) == 0
+        else jnp.asarray(time_in_years)
     )
 
 
@@ -49,10 +56,10 @@ class Pixel:
     """
 
     NSIDE: int = 8
-    NPIX: int = None
-    angular_map: jax.Array = None
-    theta_pixel: jax.Array = None
-    phi_pixel: jax.Array = None
+    NPIX: int | None = None
+    angular_map: jax.Array | None = None
+    theta_pixel: jax.Array | None = None
+    phi_pixel: jax.Array | None = None
 
     def __post_init__(self) -> None:
         """
@@ -82,7 +89,9 @@ class Pixel:
         """
         NPIX = hp.nside2npix(self.NSIDE)
         theta_pixel, phi_pixel = hp.pix2ang(self.NSIDE, jnp.arange(NPIX))
-        angular_map = jnp.stack([theta_pixel, phi_pixel], axis=-1)
+        theta_pixel = jnp.asarray(theta_pixel)
+        phi_pixel = jnp.asarray(phi_pixel)
+        angular_map = jnp.asarray(jnp.stack([theta_pixel, phi_pixel], axis=-1))
         return NPIX, angular_map, theta_pixel, phi_pixel
 
     def change_NSIDE(self, NSIDE: int) -> None:
@@ -137,8 +146,57 @@ def arm_length_exponential(
 
 
 @jax.jit
+def combine_single_link(
+    combination_matrix: ArrayLike, single_link: ArrayLike
+) -> jax.Array:
+    """
+    Applies a detector's channel-combination matrix to per-link responses.
+
+    Args:
+        combination_matrix (ArrayLike): Mixing matrix turning per-link
+            responses into readout channels, with shape (..., x_vector,
+            channels, arms).
+        single_link (ArrayLike): Per-link response, with shape (...,
+            x_vector, arms, pixels).
+
+    Returns:
+        jax.Array: The per-channel response, with shape (..., x_vector,
+            channels, pixels).
+    """
+    return jnp.einsum("...ijk,...ikl->...ijl", combination_matrix, single_link)
+
+
+@jax.jit
+def project_noise_matrix(
+    combination_matrix: ArrayLike, single_link_noise: ArrayLike
+) -> jax.Array:
+    """
+    Congruence-transforms a per-link noise covariance into a detector's
+    channel-combination basis: ``combination_matrix @ single_link_noise @
+    combination_matrix^H``.
+
+    Args:
+        combination_matrix (ArrayLike): Mixing matrix turning per-link
+            responses into readout channels, with shape (..., x_vector,
+            channels, arms).
+        single_link_noise (ArrayLike): Per-link noise covariance, with shape
+            (..., x_vector, arms, arms).
+
+    Returns:
+        jax.Array: The projected noise covariance, with shape (...,
+            x_vector, channels, channels).
+    """
+    first_contraction = jnp.einsum(
+        "...ijk,...ikl->...ijl", combination_matrix, single_link_noise
+    )
+    return jnp.einsum(
+        "...ijk,...ilk->...ijl", jnp.conjugate(combination_matrix), first_contraction
+    )
+
+
+@jax.jit
 def shift_to_center(
-    first: ArrayLike, second: ArrayLike, third: ArrayLike
+    first: jax.Array, second: jax.Array, third: jax.Array
 ) -> tuple[jax.Array, jax.Array, jax.Array]:
     """
     Adjusts the positions of three points (or vectors) so that their barycenter
@@ -170,26 +228,26 @@ def shift_to_center(
 
 
 @jax.jit
-def arms_matrix_from_satellite_positions(
-    m1: ArrayLike, m2: ArrayLike, m3: ArrayLike
+def arms_matrix_from_vertex_positions(
+    m1: jax.Array, m2: jax.Array, m3: jax.Array
 ) -> jax.Array:
     """
     Builds a constellation arm matrix (the vector difference between each
-    ordered pair of satellites) from three satellites' Cartesian positions.
+    ordered pair of vertices) from three vertices' Cartesian positions.
 
     This differencing is identical regardless of which orbit model produced
     the positions, so it is shared by the analytical, Keplerian, and
-    numerical orbit models in `gw_response.lisa`.
+    numerical orbit models in `gw_response.space_based.orbits`.
 
     Args:
-        m1 (ArrayLike): The Cartesian position of satellite 1.
-        m2 (ArrayLike): The Cartesian position of satellite 2.
-        m3 (ArrayLike): The Cartesian position of satellite 3.
+        m1 (jax.Array): The Cartesian position of vertex 1.
+        m2 (jax.Array): The Cartesian position of vertex 2.
+        m3 (jax.Array): The Cartesian position of vertex 3.
 
     Returns:
         jax.Array: A numpy array representing the arm matrix of the
             constellation. Each row of the array corresponds to the vector
-            difference between pairs of satellites, ordered [12, 23, 31, 21,
+            difference between pairs of vertices, ordered [12, 23, 31, 21,
             32, 13].
     """
     return jnp.array(
@@ -260,10 +318,12 @@ def _load_numerical_orbits_lisaorbits(orbit_file: str) -> tuple[jax.Array, jax.A
                 f"Unsupported lisaorbits file version {version!r}; "
                 "gw_response requires lisaorbits format version >= 2.0."
             )
-        t0 = float(hdf5.attrs["t0"])
-        dt = float(hdf5.attrs["dt"])
-        size = int(hdf5.attrs["size"])
-        positions_grid = jnp.array(hdf5["tcb/x"][:])
+        t0 = float(np.asarray(hdf5.attrs["t0"]).item())
+        dt = float(np.asarray(hdf5.attrs["dt"]).item())
+        size = int(np.asarray(hdf5.attrs["size"]).item())
+        dataset = hdf5["tcb/x"]
+        assert isinstance(dataset, h5py.Dataset)
+        positions_grid = jnp.array(dataset[:])
     time_grid = (t0 + np.arange(size) * dt) / PhysicalConstants().yr
     return jnp.array(time_grid), positions_grid
 

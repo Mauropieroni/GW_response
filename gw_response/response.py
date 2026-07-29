@@ -1,76 +1,215 @@
-import chex
-import jax
-from jax.typing import ArrayLike
-from dataclasses import field
+from __future__ import annotations
 
-from .constants import PhysicalConstants
-from .lisa import LISA
-from .single_link import (
+import chex
+from functools import partial
+import jax
+import jax.numpy as jnp
+from dataclasses import field
+from typing import TYPE_CHECKING
+
+from jax.typing import ArrayLike
+
+from gw_response.constants import PhysicalConstants
+from gw_response.single_link import (
     unit_vec,
     uv_analytical,
     polarization_tensors_LR,
     polarization_tensors_PC,
     get_single_link_response,
 )
-from .tdi import TDI_map
-from .single_link import (
-    linear_response_angular,
-    quadratic_integrand,
-    quadratic_response_integrated,
-)
+from gw_response.space_based.tdi import tdi_matrix
+
+if TYPE_CHECKING:
+    from gw_response.detector import Detector
+
+
+@jax.jit
+def linear_response_angular(
+    TDI_idx: ArrayLike,
+    single_link: ArrayLike,
+    arms_matrix_rescaled: ArrayLike,
+    x_vector: ArrayLike,
+) -> jax.Array:
+    """
+    Projects the single-link strain response onto a TDI combination, giving
+    the (sky-resolved) linear response of that TDI variable.
+
+    Args:
+        TDI_idx (ArrayLike): Index into :data:`gw_response.space_based.tdi.TDI_map`
+            selecting the TDI combination to project onto.
+        single_link (ArrayLike): Single-link strain response, as returned by
+            :func:`gw_response.single_link.get_single_link_response`, with
+            shape (configurations, x_vector, arms, pixels).
+        arms_matrix_rescaled (ArrayLike): Detector arm vectors rescaled by
+            the arm length, with shape (configurations, vectorial_index (3),
+            arms (6)).
+        x_vector (ArrayLike): Vector of ``2 pi f L / c`` values over
+            frequency.
+
+    Returns:
+        jax.Array: The linear TDI response, with shape (configurations,
+            x_vector, TDI, pixels).
+    """
+    # tdi_mat has shape configuration, x_vector, TDI, arms
+    tdi_mat = tdi_matrix(TDI_idx, arms_matrix_rescaled, x_vector)
+
+    # single_link has shape configuration, x_vector, arms, pixels
+
+    # linear response is configuration, x_vector, TDI, pixels
+    return jnp.einsum("...ijk,...ikl->...ijl", tdi_mat, single_link)
+
+
+@jax.jit
+def quadratic_response_angular(
+    TDI_idx: ArrayLike,
+    single_link: ArrayLike,
+    arms_matrix_rescaled: ArrayLike,
+    x_vector: ArrayLike,
+) -> jax.Array:
+    """
+    Computes the (sky-resolved) quadratic response of a TDI combination,
+    i.e. the cross-spectrum of the linear response with its own conjugate,
+    summed over polarizations and Hermitian conjugation.
+
+    Args:
+        TDI_idx (ArrayLike): Index into :data:`gw_response.space_based.tdi.TDI_map`
+            selecting the TDI combination to project onto.
+        single_link (ArrayLike): Single-link strain response, as returned by
+            :func:`gw_response.single_link.get_single_link_response`, with
+            shape (configurations, x_vector, arms, pixels).
+        arms_matrix_rescaled (ArrayLike): Detector arm vectors rescaled by
+            the arm length, with shape (configurations, vectorial_index (3),
+            arms (6)).
+        x_vector (ArrayLike): Vector of ``2 pi f L / c`` values over
+            frequency.
+
+    Returns:
+        jax.Array: The quadratic TDI response, with shape (configurations,
+            x_vector, TDI, TDI, pixels).
+    """
+    # linear response is configuration, x_vector, TDI, pixels
+    linear_response = linear_response_angular(
+        TDI_idx, single_link, arms_matrix_rescaled, x_vector
+    )
+
+    # quadratic response is configuration, x_vector, TDI, TDI, pixels
+    quadratic_response = jnp.einsum(
+        "...ijl,...ikl->...ijkl",
+        linear_response,
+        jnp.conjugate(linear_response),
+    )
+
+    # The first 2 is sum over polarization the second is for the h.c. sum
+    return 2 * 2 * quadratic_response / jnp.pi / 4
+
+
+@jax.jit
+def quadratic_integrand(
+    TDI_idx: ArrayLike,
+    single_link: ArrayLike,
+    arms_matrix_rescaled: ArrayLike,
+    x_vector: ArrayLike,
+) -> jax.Array:
+    """
+    Computes the sky-resolved integrand later averaged, over the sky, by
+    :func:`quadratic_response_integrated` to give the quadratic TDI
+    response.
+
+    This is currently a thin wrapper around
+    :func:`quadratic_response_angular`.
+
+    Args:
+        TDI_idx (ArrayLike): Index into :data:`gw_response.space_based.tdi.TDI_map`
+            selecting the TDI combination to project onto.
+        single_link (ArrayLike): Single-link strain response, as returned by
+            :func:`gw_response.single_link.get_single_link_response`, with
+            shape (configurations, x_vector, arms, pixels).
+        arms_matrix_rescaled (ArrayLike): Detector arm vectors rescaled by
+            the arm length, with shape (configurations, vectorial_index (3),
+            arms (6)).
+        x_vector (ArrayLike): Vector of ``2 pi f L / c`` values over
+            frequency.
+
+    Returns:
+        jax.Array: The quadratic response integrand, with shape
+            (configurations, x_vector, TDI, TDI, pixels).
+    """
+    # Defines the integrand using the TDI factors
+    return quadratic_response_angular(
+        TDI_idx, single_link, arms_matrix_rescaled, x_vector
+    )
+
+
+@jax.jit
+def quadratic_response_integrated(angular_response: ArrayLike) -> jax.Array:
+    """
+    Averages the sky-resolved quadratic response over the sky (pixels) to
+    give the quadratic TDI response as a function of frequency.
+
+    Args:
+        angular_response (ArrayLike): Sky-resolved quadratic response, as
+            returned by :func:`quadratic_integrand`, with shape
+            (configurations, x_vector, TDI, TDI, pixels).
+
+    Returns:
+        jax.Array: The sky-averaged quadratic response, with shape
+            (configurations, x_vector, TDI, TDI), normalized by ``4 * pi`` to
+            account for the solid angle of the sphere.
+    """
+    return 4 * jnp.pi * jnp.mean(angular_response, axis=-1)
 
 
 @chex.dataclass
 class Response(object):
     """
-    A wrapper tying the single-link and TDI response functions in this
-    package to a specific detector, and caching the results of a full
-    response computation.
+    Generic class to handle GW response computations for any Detector (e.g.
+    LISA, LIGO).
+
+    Identity-based `__hash__`/`__eq__` (overriding chex's default field-based
+    ones, which reject `Response` as unhashable) are what let `self` be used
+    as a static argument to `jax.jit` below: every `get_*` method here is a
+    pure function of its arguments (`det` is also passed as a static argument
+    and resolved via ordinary Python attribute access at trace time), so
+    wrapping them individually allows tracing and compiling the whole
+    computation for one call as a single XLA program, instead of stitching
+    together separately-jitted kernels with Python overhead in between.
+    `compute_detector` is intentionally left unjitted since it mutates
+    `self`'s dict attributes, and a jitted function's Python-level side
+    effects only run once (at trace time) rather than on every call, which
+    would silently stop updating them on a cache hit.
 
     Attributes:
         ps (chex.dataclass): Physical constants used in the response
             computations.
-        det (chex.dataclass): The detector (e.g. LISA) the response is
-            computed for.
         single_link_response (dict): Cache of the single-link response
-            computed by :meth:`compute_detector`, keyed by polarization letter.
-        linear_integrand (dict): Cache of the linear TDI response integrand
-            computed by :meth:`compute_detector`, keyed by TDI combination name.
-        quadratic_integrand (dict): Cache of the sky-resolved quadratic TDI
-            response computed by :meth:`compute_detector`, keyed by TDI
+            computed by :meth:`compute_detector`, keyed by polarization
+            letter.
+        linear_integrand (dict): Cache of the linear response integrand
+            computed by :meth:`compute_detector`, keyed by combination name.
+        quadratic_integrand (dict): Cache of the sky-resolved quadratic
+            response computed by :meth:`compute_detector`, keyed by
             combination name.
-        quadratic_integrated (dict): Cache of the sky-averaged quadratic TDI
-            response computed by :meth:`compute_detector`, keyed by TDI
+        quadratic_integrated (dict): Cache of the sky-averaged quadratic
+            response computed by :meth:`compute_detector`, keyed by
             combination name.
     """
 
-    ps: chex.dataclass = PhysicalConstants()
-    det: chex.dataclass = field(default_factory=lambda: LISA())
-    single_link_response = {}
-    linear_integrand = {}
-    quadratic_integrand = {}
-    quadratic_integrated = {}
+    ps: PhysicalConstants = PhysicalConstants()
+    single_link_response: dict = field(default_factory=dict)
+    linear_integrand: dict = field(default_factory=dict)
+    quadratic_integrand: dict = field(default_factory=dict)
+    quadratic_integrated: dict = field(default_factory=dict)
 
-    def __post_init__(self, **kwargs) -> None:
-        """
-        Binds the detector's ``satellite_positions`` and ``detector_arms``
-        methods into the ``get_positions`` and ``get_arms`` helpers used
-        throughout this class.
+    def __hash__(self) -> int:
+        return id(self)
 
-        Args:
-                **kwargs: Extra keyword arguments forwarded to
-                ``det.satellite_positions`` and ``det.detector_arms`` on every
-                call. Reserved for future per-call detector options; ``ps``
-                and ``det`` are regular dataclass fields (not ``InitVar``),
-                so no keyword arguments reach here through normal
-                ``Response(...)`` construction today.
-        """
-        self.get_positions = lambda times: self.det.satellite_positions(times, **kwargs)
-        self.get_arms = lambda times: self.det.detector_arms(times, **kwargs)
+    def __eq__(self, other: object) -> bool:
+        return self is other
 
-    # @partial(jax.jit, static_argnums=(0, 1, 2, 3, 4))
+    @partial(jax.jit, static_argnums=(0, 1), static_argnames=("polarization",))
     def get_single_link_response(
         self,
+        det: "Detector",
         times_in_years: ArrayLike,
         theta_array: ArrayLike,
         phi_array: ArrayLike,
@@ -78,12 +217,17 @@ class Response(object):
         polarization: str = "LR",
     ) -> dict[str, jax.Array]:
         """
-        Computes the single-link strain response for both polarizations of
-        the requested basis.
+        Computes the per-link, per-pixel strain response to a GW arriving
+        from (theta_array, phi_array), for each polarization mode. The
+        underlying Michelson-link physics is the same regardless of detector
+        geometry (LISA's 6 arms or LIGO's Michelson arms alike), so this
+        isn't delegated to `det` at all.
 
         Args:
+            det (Detector): The detector (e.g. LISA, LIGO) the response is
+                computed for.
             times_in_years (ArrayLike): Time(s), in years, at which to
-                evaluate the satellite positions and detector arms.
+                evaluate the vertex positions and detector arms.
             theta_array (ArrayLike): Colatitude(s) of the sky position(s),
                 in radians.
             phi_array (ArrayLike): Longitude(s) of the sky position(s), in
@@ -103,198 +247,250 @@ class Response(object):
             ValueError: If ``polarization`` is not "LR" or "PC".
         """
         pol = polarization.upper()
-
-        k_vector = unit_vec(theta_array, phi_array)
+        wavevector = unit_vec(theta_array, phi_array)
         u, v = uv_analytical(theta_array, phi_array)
 
-        positions_rescaled = self.get_positions(times_in_years) / self.det.armlength
-        arms_matrix_rescaled = self.get_arms(times_in_years) / self.det.armlength
-        x_array = self.det.x(frequency_array)
+        positions_rescaled = det.vertex_positions(times_in_years) / det.armlength
+        arms_matrix_rescaled = det.detector_arms(times_in_years) / det.armlength
+        x_vector = det.x(frequency_array)
 
         if pol == "PC":
             p1, p2 = polarization_tensors_PC(u, v)
         elif pol == "LR":
             p1, p2 = polarization_tensors_LR(u, v)
         else:
-            raise ValueError("Incrorrect polarization type")
+            raise ValueError("Incorrect polarization type")
 
         ppol = {pol[0]: p1, pol[1]: p2}
-        val = {}
-
-        for p in ppol.keys():
-            val[p] = get_single_link_response(
-                ppol[p],
-                arms_matrix_rescaled,
-                k_vector,
-                x_array,
-                positions_rescaled,
+        return {
+            p: get_single_link_response(
+                ppol[p], arms_matrix_rescaled, wavevector, x_vector, positions_rescaled
             )
+            for p in ppol.keys()
+        }
 
-        return val
-
+    @partial(
+        jax.jit,
+        static_argnums=(0, 1),
+        static_argnames=("combination", "polarization"),
+    )
     def get_linear_integrand(
         self,
-        times_in_years: ArrayLike,
-        single_link: dict[str, ArrayLike],
-        frequency_array: ArrayLike,
-        TDI: str = "XYZ",
-        polarization: str = "LR",
-    ) -> dict[str, jax.Array]:
-        """
-        Projects a single-link response onto a TDI combination, for each
-        polarization.
-
-        Args:
-            times_in_years (ArrayLike): Time(s), in years, at which to
-                evaluate the detector arms.
-            single_link (dict): Single-link strain response per
-                polarization, as returned by :meth:`get_single_link_response`.
-            frequency_array (ArrayLike): Frequency values, in Hz, at which
-                to evaluate the response.
-            TDI (str, optional): Name of the TDI combination (a key of
-                :data:`gw_response.tdi.TDI_map`). Default is "XYZ".
-            polarization (str, optional): Polarization letters to iterate
-                over (e.g. "LR"). Default is "LR".
-
-        Returns:
-            dict: A dictionary mapping each polarization letter to the
-                linear TDI response, with shape (configurations, x_vector, TDI,
-                pixels).
-        """
-        pol = polarization.upper()
-        val = {}
-
-        arms_matrix_rescaled = self.get_arms(times_in_years) / self.det.armlength
-        x_array = self.det.x(frequency_array)
-
-        for p in pol:
-            val[p] = linear_response_angular(
-                TDI_map[TDI],
-                single_link[p],
-                arms_matrix_rescaled,
-                x_array,
-            )
-
-        return val
-
-    def get_quadratic_integrand(
-        self,
-        times_in_years: ArrayLike,
-        single_link: dict[str, ArrayLike],
-        frequency_array: ArrayLike,
-        TDI: str = "XYZ",
-        polarization: str = "LR",
-    ) -> dict[str, jax.Array]:
-        """
-        Computes the sky-resolved quadratic TDI response, for each
-        polarization.
-
-        Args:
-            times_in_years (ArrayLike): Time(s), in years, at which to
-                evaluate the detector arms.
-            single_link (dict): Single-link strain response per
-                polarization, as returned by :meth:`get_single_link_response`.
-            frequency_array (ArrayLike): Frequency values, in Hz, at which
-                to evaluate the response.
-            TDI (str, optional): Name of the TDI combination (a key of
-                :data:`gw_response.tdi.TDI_map`). Default is "XYZ".
-            polarization (str, optional): Polarization letters to iterate
-                over (e.g. "LR"). Default is "LR".
-
-        Returns:
-            dict: A dictionary mapping each doubled polarization letter
-                (e.g. "LL", "RR") to the sky-resolved quadratic TDI response,
-                with shape (configurations, x_vector, TDI, TDI, pixels).
-        """
-        pol = polarization.upper()
-        val = {}
-
-        arms_matrix_rescaled = self.get_arms(times_in_years) / self.det.armlength
-        x_array = self.det.x(frequency_array)
-
-        for p in pol:
-            val[2 * p] = quadratic_integrand(
-                TDI_map[TDI],
-                single_link[p],
-                arms_matrix_rescaled,
-                x_array,
-            )
-
-        return val
-
-    # @partial(jax.jit, static_argnums=(0, 1, 2, 3))
-    def get_quadratic_integrated(
-        self,
-        quadratic_integrand: dict[str, dict[str, ArrayLike]],
-        TDI: str = "XYZ",
-        polarization: str = "LR",
-        verbose: bool = True,
-    ) -> dict[str, jax.Array]:
-        """
-        Averages the sky-resolved quadratic TDI response over the sky, for
-        each polarization.
-
-        Args:
-            quadratic_integrand (dict): Sky-resolved quadratic TDI response
-                per TDI combination and doubled polarization letter, as returned
-                by :meth:`get_quadratic_integrand` (nested under the TDI
-                combination name, matching :attr:`quadratic_integrand`).
-            TDI (str, optional): Name of the TDI combination to look up in
-                ``quadratic_integrand``. Default is "XYZ".
-            polarization (str, optional): Polarization letters to iterate
-                over (e.g. "LR"). Default is "LR".
-            verbose (bool, optional): Unused. Present for interface
-                compatibility. Default is True.
-
-        Returns:
-            dict: A dictionary mapping each doubled polarization letter
-                (e.g. "LL", "RR") to the sky-averaged quadratic TDI response,
-                with shape (configurations, x_vector, TDI, TDI).
-        """
-        quadratic_integrated = {}
-        for p in polarization:
-            # Computes the integral for the TDI variable
-            quadratic_integrated[2 * p] = quadratic_response_integrated(
-                quadratic_integrand[TDI][2 * p]
-            )
-
-        return quadratic_integrated
-
-    # @partial(jax.jit, static_argnums=(0, 1, 2, 3, 4))
-    def compute_detector(
-        self,
+        det: "Detector",
         times_in_years: ArrayLike,
         theta_array: ArrayLike,
         phi_array: ArrayLike,
         frequency_array: ArrayLike,
-        TDI: str = "XYZ",
         polarization: str = "LR",
-    ) -> None:
+        combination: str | None = None,
+    ) -> dict[str, jax.Array]:
         """
-        Computes and caches the full response chain (single-link, linear TDI
-        integrand, quadratic TDI integrand, and sky-averaged quadratic TDI
-        response) for a given TDI combination.
+        Computes the linear integrand for a GW arriving from
+        (theta_array, phi_array), for each polarization, projected onto a
+        readout combination.
 
-        Results are stored in :attr:`single_link_response`,
-        :attr:`linear_integrand`, :attr:`quadratic_integrand`, and
-        :attr:`quadratic_integrated` (the latter three keyed by ``TDI``).
+        Builds the single-link response and the combination matrix
+        internally, then applies `det.linear_response_from_single_link` to
+        project the former onto the latter (`combination` is a readout
+        combination name, e.g. a TDI variable such as "XYZ"/"AET" for LISA,
+        or "Michelson" for LIGO -- it defaults to `det.default_combination`).
 
         Args:
+            det (Detector): The detector (e.g. LISA, LIGO) the response is
+                computed for.
             times_in_years (ArrayLike): Time(s), in years, at which to
-                evaluate the satellite positions and detector arms.
+                evaluate the vertex positions and detector arms.
             theta_array (ArrayLike): Colatitude(s) of the sky position(s),
                 in radians.
             phi_array (ArrayLike): Longitude(s) of the sky position(s), in
                 radians.
             frequency_array (ArrayLike): Frequency values, in Hz, at which
                 to evaluate the response.
-            TDI (str, optional): Name of the TDI combination (a key of
-                :data:`gw_response.tdi.TDI_map`). Default is "XYZ".
+            polarization (str, optional): Polarization basis to use, either
+                "LR" (left/right circular) or "PC" (plus/cross). Default is
+                "LR".
+            combination (str, optional): Name of the readout combination.
+                Defaults to ``det.default_combination``.
+
+        Returns:
+            dict: A dictionary mapping each polarization letter to the
+                linear response integrand, with shape (configurations,
+                x_vector, channels, pixels).
+        """
+        combination = combination or det.default_combination
+
+        single_link = self.get_single_link_response(
+            det,
+            times_in_years,
+            theta_array,
+            phi_array,
+            frequency_array,
+            polarization=polarization,
+        )
+        arms_matrix_rescaled = det.detector_arms(times_in_years) / det.armlength
+        x_vector = det.x(frequency_array)
+        combination_matrix = det.combination_matrix(
+            combination, arms_matrix_rescaled, x_vector
+        )
+
+        return det.linear_response_from_single_link(single_link, combination_matrix)
+
+    @partial(
+        jax.jit,
+        static_argnums=(0, 1),
+        static_argnames=("combination", "polarization"),
+    )
+    def get_quadratic_integrand(
+        self,
+        det: "Detector",
+        times_in_years: ArrayLike,
+        theta_array: ArrayLike,
+        phi_array: ArrayLike,
+        frequency_array: ArrayLike,
+        polarization: str = "LR",
+        combination: str | None = None,
+    ) -> dict[str, jax.Array]:
+        """
+        Computes the sky-resolved quadratic response integrand for a GW
+        arriving from (theta_array, phi_array), for each polarization,
+        projected onto a readout combination.
+
+        Builds the linear integrand internally (see
+        :meth:`get_linear_integrand`), then applies
+        `det.quadratic_response_from_single_link` to it.
+
+        Args:
+            det (Detector): The detector (e.g. LISA, LIGO) the response is
+                computed for.
+            times_in_years (ArrayLike): Time(s), in years, at which to
+                evaluate the vertex positions and detector arms.
+            theta_array (ArrayLike): Colatitude(s) of the sky position(s),
+                in radians.
+            phi_array (ArrayLike): Longitude(s) of the sky position(s), in
+                radians.
+            frequency_array (ArrayLike): Frequency values, in Hz, at which
+                to evaluate the response.
+            polarization (str, optional): Polarization basis to use, either
+                "LR" (left/right circular) or "PC" (plus/cross). Default is
+                "LR".
+            combination (str, optional): Name of the readout combination.
+                Defaults to ``det.default_combination``.
+
+        Returns:
+            dict: A dictionary mapping each doubled polarization letter
+                (e.g. "LL", "RR") to the sky-resolved quadratic response,
+                with shape (configurations, x_vector, channels, channels,
+                pixels).
+        """
+        linear = self.get_linear_integrand(
+            det,
+            times_in_years,
+            theta_array,
+            phi_array,
+            frequency_array,
+            polarization=polarization,
+            combination=combination,
+        )
+        return det.quadratic_response_from_single_link(linear)
+
+    @partial(
+        jax.jit,
+        static_argnums=(0, 1),
+        static_argnames=("combination", "polarization"),
+    )
+    def get_quadratic_integrated(
+        self,
+        det: "Detector",
+        times_in_years: ArrayLike,
+        theta_array: ArrayLike,
+        phi_array: ArrayLike,
+        frequency_array: ArrayLike,
+        polarization: str = "LR",
+        combination: str | None = None,
+    ) -> dict[str, jax.Array]:
+        """
+        Computes the sky-averaged quadratic response for a GW arriving from
+        (theta_array, phi_array), for each polarization, projected onto a
+        readout combination.
+
+        Builds the quadratic integrand internally (see
+        :meth:`get_quadratic_integrand`), then applies
+        `det.integrate_quadratic_response` to it.
+
+        Args:
+            det (Detector): The detector (e.g. LISA, LIGO) the response is
+                computed for.
+            times_in_years (ArrayLike): Time(s), in years, at which to
+                evaluate the vertex positions and detector arms.
+            theta_array (ArrayLike): Colatitude(s) of the sky position(s),
+                in radians.
+            phi_array (ArrayLike): Longitude(s) of the sky position(s), in
+                radians.
+            frequency_array (ArrayLike): Frequency values, in Hz, at which
+                to evaluate the response.
+            polarization (str, optional): Polarization basis to use, either
+                "LR" (left/right circular) or "PC" (plus/cross). Default is
+                "LR".
+            combination (str, optional): Name of the readout combination.
+                Defaults to ``det.default_combination``.
+
+        Returns:
+            dict: A dictionary mapping each doubled polarization letter
+                (e.g. "LL", "RR") to the sky-averaged quadratic response,
+                with shape (configurations, x_vector, channels, channels).
+        """
+        quadratic = self.get_quadratic_integrand(
+            det,
+            times_in_years,
+            theta_array,
+            phi_array,
+            frequency_array,
+            polarization=polarization,
+            combination=combination,
+        )
+        return det.integrate_quadratic_response(quadratic)
+
+    def compute_detector(
+        self,
+        det: "Detector",
+        times_in_years: ArrayLike,
+        theta_array: ArrayLike,
+        phi_array: ArrayLike,
+        frequency_array: ArrayLike,
+        combination: str | None = None,
+        polarization: str = "LR",
+    ) -> None:
+        """
+        Computes and caches the full response chain (single-link, linear
+        integrand, quadratic integrand, and sky-averaged quadratic response)
+        for a given readout combination.
+
+        Results are stored in :attr:`single_link_response`,
+        :attr:`linear_integrand`, :attr:`quadratic_integrand`, and
+        :attr:`quadratic_integrated` (the latter three keyed by
+        ``combination``).
+
+        Args:
+            det (Detector): The detector (e.g. LISA, LIGO) the response is
+                computed for.
+            times_in_years (ArrayLike): Time(s), in years, at which to
+                evaluate the vertex positions and detector arms.
+            theta_array (ArrayLike): Colatitude(s) of the sky position(s),
+                in radians.
+            phi_array (ArrayLike): Longitude(s) of the sky position(s), in
+                radians.
+            frequency_array (ArrayLike): Frequency values, in Hz, at which
+                to evaluate the response.
+            combination (str, optional): Name of the readout combination.
+                Defaults to ``det.default_combination``.
             polarization (str, optional): Polarization basis to use, either
                 "LR" (left/right circular) or "PC" (plus/cross). Default is
                 "LR".
         """
+        combination = combination or det.default_combination
+
         self.single_link_response = self.get_single_link_response(
+            det,
             times_in_years,
             theta_array,
             phi_array,
@@ -302,24 +498,32 @@ class Response(object):
             polarization=polarization,
         )
 
-        self.linear_integrand[TDI] = self.get_linear_integrand(
+        self.linear_integrand[combination] = self.get_linear_integrand(
+            det,
             times_in_years,
-            self.single_link_response,
+            theta_array,
+            phi_array,
             frequency_array,
-            TDI=TDI,
             polarization=polarization,
+            combination=combination,
         )
 
-        # Computes the integral for the TDI variable
-        self.quadratic_integrand[TDI] = self.get_quadratic_integrand(
+        self.quadratic_integrand[combination] = self.get_quadratic_integrand(
+            det,
             times_in_years,
-            self.single_link_response,
+            theta_array,
+            phi_array,
             frequency_array,
-            TDI=TDI,
             polarization=polarization,
+            combination=combination,
         )
 
-        # Computes the integral for the TDI variable
-        self.quadratic_integrated[TDI] = self.get_quadratic_integrated(
-            self.quadratic_integrand, TDI=TDI, polarization=polarization
+        self.quadratic_integrated[combination] = self.get_quadratic_integrated(
+            det,
+            times_in_years,
+            theta_array,
+            phi_array,
+            frequency_array,
+            polarization=polarization,
+            combination=combination,
         )

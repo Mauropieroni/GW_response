@@ -1,12 +1,10 @@
 # Global imports
-
 import jax
 import jax.numpy as jnp
 from jax.typing import ArrayLike
 
 # Local imports
-from .tdi import tdi_matrix
-from .utils import arm_length_exponential
+from gw_response.utils import arm_length_exponential
 
 # Update jax to use 64 bit precision
 jax.config.update("jax_enable_x64", True)
@@ -30,13 +28,10 @@ def unit_vec(theta: ArrayLike, phi: ArrayLike) -> jax.Array:
     """
     theta = jnp.atleast_1d(theta)
     phi = jnp.atleast_1d(phi)
+
     # The output will be vectorial index, pixels
     return jnp.array(
-        [
-            jnp.sin(theta) * jnp.cos(phi),
-            jnp.sin(theta) * jnp.sin(phi),
-            jnp.cos(theta),
-        ]
+        [jnp.sin(theta) * jnp.cos(phi), jnp.sin(theta) * jnp.sin(phi), jnp.cos(theta)]
     )
 
 
@@ -63,29 +58,30 @@ def uv_analytical(theta: ArrayLike, phi: ArrayLike) -> tuple[jax.Array, jax.Arra
     """
     theta = jnp.atleast_1d(theta)
     phi = jnp.atleast_1d(phi)
+
+    dk_dtheta = jnp.array(
+        [
+            jnp.cos(theta) * jnp.cos(phi),
+            jnp.cos(theta) * jnp.sin(phi),
+            -jnp.sin(theta),
+        ]
+    ).T
+    dk_dphi = jnp.array([jnp.sin(phi), -jnp.cos(phi), 0.0 * phi]).T
+
     # The output will be pixels, vectorial index
-    return (
-        jnp.array(
-            [
-                jnp.cos(theta) * jnp.cos(phi),
-                jnp.cos(theta) * jnp.sin(phi),
-                -jnp.sin(theta),
-            ]
-        ).T,
-        jnp.array([jnp.sin(phi), -jnp.cos(phi), 0.0 * phi]).T,
-    )
+    return dk_dtheta, dk_dphi
 
 
 @jax.jit
-def polarization_vectors(u: ArrayLike, v: ArrayLike) -> tuple[jax.Array, jax.Array]:
+def polarization_vectors(u: jax.Array, v: jax.Array) -> tuple[jax.Array, jax.Array]:
     """
     Builds the complex left/right circular polarization vectors from the two
     transverse unit vectors.
 
     Args:
-        u (ArrayLike): First transverse unit vector, shape (pixels,
+        u (jax.Array): First transverse unit vector, shape (pixels,
             vectorial_index (3)).
-        v (ArrayLike): Second transverse unit vector, shape (pixels,
+        v (jax.Array): Second transverse unit vector, shape (pixels,
             vectorial_index (3)).
 
     Returns:
@@ -98,14 +94,14 @@ def polarization_vectors(u: ArrayLike, v: ArrayLike) -> tuple[jax.Array, jax.Arr
 
 
 @jax.jit
-def polarization_tensors_PC(u: ArrayLike, v: ArrayLike) -> tuple[jax.Array, jax.Array]:
+def polarization_tensors_PC(u: jax.Array, v: jax.Array) -> tuple[jax.Array, jax.Array]:
     """
     Computes the plus/cross gravitational wave polarization tensors.
 
     Args:
-        u (ArrayLike): First transverse unit vector, shape (pixels,
+        u (jax.Array): First transverse unit vector, shape (pixels,
             vectorial_index (3)).
-        v (ArrayLike): Second transverse unit vector, shape (pixels,
+        v (jax.Array): Second transverse unit vector, shape (pixels,
             vectorial_index (3)).
 
     Returns:
@@ -121,15 +117,15 @@ def polarization_tensors_PC(u: ArrayLike, v: ArrayLike) -> tuple[jax.Array, jax.
 
 
 @jax.jit
-def polarization_tensors_LR(u: ArrayLike, v: ArrayLike) -> tuple[jax.Array, jax.Array]:
+def polarization_tensors_LR(u: jax.Array, v: jax.Array) -> tuple[jax.Array, jax.Array]:
     """
     Computes the left/right circular gravitational wave polarization
     tensors.
 
     Args:
-        u (ArrayLike): First transverse unit vector, shape (pixels,
+        u (jax.Array): First transverse unit vector, shape (pixels,
             vectorial_index (3)).
-        v (ArrayLike): Second transverse unit vector, shape (pixels,
+        v (jax.Array): Second transverse unit vector, shape (pixels,
             vectorial_index (3)).
 
     Returns:
@@ -143,6 +139,38 @@ def polarization_tensors_LR(u: ArrayLike, v: ArrayLike) -> tuple[jax.Array, jax.
 
     # The output will be pixels, vectorial index, vectorial index
     return e1L, e1R
+
+
+@jax.jit
+def geometrical_factor(
+    arms_matrix_rescaled: ArrayLike, polarization_tensor: ArrayLike
+) -> jax.Array:
+    """
+    Projects the gravitational wave polarization tensor onto each detector
+    arm, giving the geometrical antenna-pattern factor of the single-link
+    response.
+
+    Args:
+        arms_matrix_rescaled (ArrayLike): Detector arm vectors rescaled by
+            the arm length, with shape (configurations, vectorial_index (3),
+            arms (6)).
+        polarization_tensor (ArrayLike): Polarization tensor(s) as returned
+            by e.g. :func:`polarization_tensors_LR`, with shape (pixels,
+            vectorial_index (3), vectorial_index (3)).
+
+    Returns:
+        jax.Array: The geometrical factor, with shape (configurations, arms,
+            pixels).
+    """
+    # arms_matrix_rescaled is configurations, vectorial_index, arms
+    # polarization_tensor is pixels, vectorial_index, vectorial_index
+
+    aux = jnp.einsum(
+        "...ik,...jk->...ijk", arms_matrix_rescaled, arms_matrix_rescaled / 2
+    )
+
+    # the output is configurations, arms, pixels
+    return jnp.einsum("...ijk,...ijl->...kl", aux, jnp.asarray(polarization_tensor).T)
 
 
 @jax.jit
@@ -170,15 +198,15 @@ def xi_k_no_G(
 
     k_dot_arms = jnp.einsum("...ij,ik->...jk", arms_matrix_rescaled, unit_wavevector)
     # These guys will be configurations, arms, pixel
-    comb_plus = 1 + k_dot_arms
-    comb_minus = 1 - k_dot_arms
+    comb_plus = 1.0 + k_dot_arms
+    comb_minus = 1.0 - k_dot_arms
 
     # These guys are  configurations, x_vector, arms, pixels
     prod_plus = jnp.einsum("i,...kl->...ikl", x_vector, comb_plus)
     prod_minus = jnp.einsum("i,...kl->...ikl", x_vector, comb_minus)
 
     # These guys are configurations, x_vector, arms, pixels
-    return jnp.exp(0.5j * prod_minus) * jnp.sinc(prod_plus / 2 / jnp.pi)
+    return jnp.exp(0.5j * prod_minus) * jnp.sinc(prod_plus / 2.0 / jnp.pi)
 
 
 @jax.jit
@@ -215,43 +243,6 @@ def position_exponential(
 
     # Output is configurations, x_vector, satellite, pixels
     return jnp.exp(exponent)
-
-
-@jax.jit
-def geometrical_factor(
-    arms_matrix_rescaled: ArrayLike, polarization_tensor: ArrayLike
-) -> jax.Array:
-    """
-    Projects the gravitational wave polarization tensor onto each detector
-    arm, giving the geometrical antenna-pattern factor of the single-link
-    response.
-
-    Args:
-        arms_matrix_rescaled (ArrayLike): Detector arm vectors rescaled by
-            the arm length, with shape (configurations, vectorial_index (3),
-            arms (6)).
-        polarization_tensor (ArrayLike): Polarization tensor(s) as returned
-            by e.g. :func:`polarization_tensors_LR`, with shape (pixels,
-            vectorial_index (3), vectorial_index (3)).
-
-    Returns:
-        jax.Array: The geometrical factor, with shape (configurations, arms,
-            pixels).
-    """
-    # arms_matrix_rescaled is configurations, vectorial_index, arms
-    # polarization_tensor is pixels, vectorial_index, vectorial_index
-
-    aux = jnp.einsum(
-        "...ik,...jk->...ijk", arms_matrix_rescaled, arms_matrix_rescaled / 2
-    )
-
-    # aux is configurations, arms, vectorial_index, pixels
-    # aux = jnp.einsum(
-    #     "...ij,ilk->...jlk", arms_matrix_rescaled, polarization_tensor.T
-    # )
-
-    # the output is configurations, arms, pixels
-    return jnp.einsum("...ijk,...ijl->...kl", aux, polarization_tensor.T)
 
 
 @jax.jit
@@ -396,142 +387,3 @@ def get_single_link_response(
     return single_link_response(
         positions_rescaled, arms_matrix_rescaled, wavevector, x_vector, xi_k_vec
     )
-
-
-@jax.jit
-def linear_response_angular(
-    TDI_idx: ArrayLike,
-    single_link: ArrayLike,
-    arms_matrix_rescaled: ArrayLike,
-    x_vector: ArrayLike,
-) -> jax.Array:
-    """
-    Projects the single-link strain response onto a TDI combination, giving
-    the (sky-resolved) linear response of that TDI variable.
-
-    Args:
-        TDI_idx (ArrayLike): Index into :data:`gw_response.tdi.TDI_map`
-            (or :data:`gw_response.tdi.tdi_fun_list`) selecting the TDI
-            combination to project onto.
-        single_link (ArrayLike): Single-link strain response, as returned by
-            :func:`get_single_link_response`, with shape (configurations,
-            x_vector, arms, pixels).
-        arms_matrix_rescaled (ArrayLike): Detector arm vectors rescaled by
-            the arm length, with shape (configurations, vectorial_index (3),
-            arms (6)).
-        x_vector (ArrayLike): Vector of ``2 pi f L / c`` values over
-            frequency.
-
-    Returns:
-        jax.Array: The linear TDI response, with shape (configurations,
-            x_vector, TDI, pixels).
-    """
-    # tdi_mat has shape configuration, x_vector, TDI, arms
-    tdi_mat = tdi_matrix(TDI_idx, arms_matrix_rescaled, x_vector)
-
-    # single_link has shape configuration, x_vector, arms, pixels
-
-    # linear response is configuration, x_vector, TDI, pixels
-    return jnp.einsum("...ijk,...ikl->...ijl", tdi_mat, single_link)
-
-
-@jax.jit
-def quadratic_response_angular(
-    TDI_idx: ArrayLike,
-    single_link: ArrayLike,
-    arms_matrix_rescaled: ArrayLike,
-    x_vector: ArrayLike,
-) -> jax.Array:
-    """
-    Computes the (sky-resolved) quadratic response of a TDI combination,
-    i.e. the cross-spectrum of the linear response with its own conjugate,
-    summed over polarizations and Hermitian conjugation.
-
-    Args:
-        TDI_idx (ArrayLike): Index into :data:`gw_response.tdi.TDI_map`
-            (or :data:`gw_response.tdi.tdi_fun_list`) selecting the TDI
-            combination to project onto.
-        single_link (ArrayLike): Single-link strain response, as returned by
-            :func:`get_single_link_response`, with shape (configurations,
-            x_vector, arms, pixels).
-        arms_matrix_rescaled (ArrayLike): Detector arm vectors rescaled by
-            the arm length, with shape (configurations, vectorial_index (3),
-            arms (6)).
-        x_vector (ArrayLike): Vector of ``2 pi f L / c`` values over
-            frequency.
-
-    Returns:
-        jax.Array: The quadratic TDI response, with shape (configurations,
-            x_vector, TDI, TDI, pixels).
-    """
-    # linear response is configuration, x_vector, TDI, pixels
-    linear_response = linear_response_angular(
-        TDI_idx, single_link, arms_matrix_rescaled, x_vector
-    )
-
-    # quadratic response is configuration, x_vector, TDI, TDI, pixels
-    quadratic_response = jnp.einsum(
-        "...ijl,...ikl->...ijkl",
-        linear_response,
-        jnp.conjugate(linear_response),
-    )
-
-    # The first 2 is sum over polarization the second is for the h.c. sum
-    return 2 * 2 * quadratic_response / jnp.pi / 4
-
-
-@jax.jit
-def quadratic_integrand(
-    TDI_idx: ArrayLike,
-    single_link: ArrayLike,
-    arms_matrix_rescaled: ArrayLike,
-    x_vector: ArrayLike,
-) -> jax.Array:
-    """
-    Computes the sky-resolved integrand later averaged, over the sky, by
-    :func:`quadratic_response_integrated` to give the quadratic TDI
-    response.
-
-    This is currently a thin wrapper around
-    :func:`quadratic_response_angular`.
-
-    Args:
-        TDI_idx (ArrayLike): Index into :data:`gw_response.tdi.TDI_map`
-            (or :data:`gw_response.tdi.tdi_fun_list`) selecting the TDI
-            combination to project onto.
-        single_link (ArrayLike): Single-link strain response, as returned by
-            :func:`get_single_link_response`, with shape (configurations,
-            x_vector, arms, pixels).
-        arms_matrix_rescaled (ArrayLike): Detector arm vectors rescaled by
-            the arm length, with shape (configurations, vectorial_index (3),
-            arms (6)).
-        x_vector (ArrayLike): Vector of ``2 pi f L / c`` values over
-            frequency.
-
-    Returns:
-        jax.Array: The quadratic response integrand, with shape
-            (configurations, x_vector, TDI, TDI, pixels).
-    """
-    # Defines the integrand using the TDI factors
-    return quadratic_response_angular(
-        TDI_idx, single_link, arms_matrix_rescaled, x_vector
-    )
-
-
-@jax.jit
-def quadratic_response_integrated(angular_response: ArrayLike) -> jax.Array:
-    """
-    Averages the sky-resolved quadratic response over the sky (pixels) to
-    give the quadratic TDI response as a function of frequency.
-
-    Args:
-        angular_response (ArrayLike): Sky-resolved quadratic response, as
-            returned by :func:`quadratic_integrand`, with shape (configurations,
-            x_vector, TDI, TDI, pixels).
-
-    Returns:
-        jax.Array: The sky-averaged quadratic response, with shape
-            (configurations, x_vector, TDI, TDI), normalized by ``4 * pi`` to
-            account for the solid angle of the sphere.
-    """
-    return 4 * jnp.pi * jnp.mean(angular_response, axis=-1)
