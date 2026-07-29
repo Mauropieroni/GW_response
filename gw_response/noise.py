@@ -189,9 +189,10 @@ class Noise(object):
         """
         combination = combination or det.default_combination
 
-        self.single_link_noise = self.get_single_link_noise(
+        single_link_noise = self.get_single_link_noise(
             det, times_in_years, frequency_array, **noise_parameters
         )
+        self.single_link_noise = single_link_noise
 
         arms_matrix_rescaled = self.get_arms_matrix_rescaled(det, times_in_years)
         x_vector = det.x(frequency_array)
@@ -199,5 +200,5 @@ class Noise(object):
             combination, arms_matrix_rescaled, x_vector
         )
         self.noise_matrix[combination] = det.project_noise(
-            combination_matrix, self.single_link_noise
+            combination_matrix, single_link_noise
         )
