@@ -86,11 +86,34 @@ def polarization_vectors(u: jax.Array, v: jax.Array) -> tuple[jax.Array, jax.Arr
 
     Returns:
         tuple: A tuple of two complex jax.Array, each with shape (pixels,
-            vectorial_index (3)), corresponding to the ``(u - i v) / sqrt(2)``
-            and ``(u + i v) / sqrt(2)`` combinations.
+        vectorial_index (3)), corresponding to the ``(u - i v) / sqrt(2)`` and
+        ``(u + i v) / sqrt(2)`` combinations.
     """
     # The output will be pixels, vectorial index
     return (u - 1j * v) / jnp.sqrt(2), (u + 1j * v) / jnp.sqrt(2)
+
+
+@jax.jit
+def polarization_vectors_angles(
+    theta: ArrayLike, phi: ArrayLike
+) -> tuple[jax.Array, jax.Array]:
+    """
+    Computes the two transverse unit vectors spanning the plane perpendicular to the
+    propagation direction, given the sky position.
+
+    Args:
+        theta (float or ArrayLike): Colatitude(s) of the sky position(s), in
+            radians.
+        phi (float or ArrayLike): Longitude(s) of the sky position(s), in
+            radians.
+
+    Returns:
+        tuple: A tuple ``(u, v)`` of jax.Array, each with shape (pixels,
+            vectorial_index (3)), giving the two transverse unit vectors for
+            every sky position.
+    """
+    u, v = uv_analytical(theta, phi)
+    return polarization_vectors(u, v)
 
 
 @jax.jit
@@ -114,6 +137,29 @@ def polarization_tensors_PC(u: jax.Array, v: jax.Array) -> tuple[jax.Array, jax.
 
     # The output will be pixels, vectorial index, vectorial index
     return e1p / jnp.sqrt(2), e1c / jnp.sqrt(2)
+
+
+@jax.jit
+def polarization_tensors_PC_angles(
+    theta: ArrayLike, phi: ArrayLike
+) -> tuple[jax.Array, jax.Array]:
+    """
+    Computes the plus/cross gravitational wave polarization tensors, given the
+    sky position.
+
+    Args:
+        theta (float or ArrayLike): Colatitude(s) of the sky position(s), in
+            radians.
+        phi (float or ArrayLike): Longitude(s) of the sky position(s), in
+            radians.
+
+    Returns:
+        tuple: A tuple ``(e_plus, e_cross)`` of jax.Array, each with shape (pixels,
+        vectorial_index (3), vectorial_index (3)), giving the plus and cross
+        polarization tensors for every sky position.
+    """
+    u, v = uv_analytical(theta, phi)
+    return polarization_tensors_PC(u, v)
 
 
 @jax.jit
@@ -142,8 +188,31 @@ def polarization_tensors_LR(u: jax.Array, v: jax.Array) -> tuple[jax.Array, jax.
 
 
 @jax.jit
+def polarization_tensors_LR_angles(
+    theta: ArrayLike, phi: ArrayLike
+) -> tuple[jax.Array, jax.Array]:
+    """
+    Computes the left/right circular gravitational wave polarization tensors,
+    given the sky position.
+
+    Args:
+        theta (float or ArrayLike): Colatitude(s) of the sky position(s), in
+            radians.
+        phi (float or ArrayLike): Longitude(s) of the sky position(s), in
+            radians.
+
+    Returns:
+        tuple: A tuple ``(e_L, e_R)`` of complex jax.Array, each with shape
+            (pixels, vectorial_index (3), vectorial_index (3)), giving the left
+            and right circular polarization tensors for every sky position.
+    """
+    u, v = uv_analytical(theta, phi)
+    return polarization_tensors_LR(u, v)
+
+
+@jax.jit
 def geometrical_factor(
-    arms_matrix_rescaled: ArrayLike, polarization_tensor: ArrayLike
+    arms_matrix_rescaled: jax.Array, polarization_tensor: jax.Array
 ) -> jax.Array:
     """
     Projects the gravitational wave polarization tensor onto each detector
@@ -151,10 +220,10 @@ def geometrical_factor(
     response.
 
     Args:
-        arms_matrix_rescaled (ArrayLike): Detector arm vectors rescaled by
+        arms_matrix_rescaled (jax.Array): Detector arm vectors rescaled by
             the arm length, with shape (configurations, vectorial_index (3),
             arms (6)).
-        polarization_tensor (ArrayLike): Polarization tensor(s) as returned
+        polarization_tensor (jax.Array): Polarization tensor(s) as returned
             by e.g. :func:`polarization_tensors_LR`, with shape (pixels,
             vectorial_index (3), vectorial_index (3)).
 
@@ -165,29 +234,83 @@ def geometrical_factor(
     # arms_matrix_rescaled is configurations, vectorial_index, arms
     # polarization_tensor is pixels, vectorial_index, vectorial_index
 
-    aux = jnp.einsum(
+    arms_tensor = jnp.einsum(
         "...ik,...jk->...ijk", arms_matrix_rescaled, arms_matrix_rescaled / 2
     )
 
     # the output is configurations, arms, pixels
-    return jnp.einsum("...ijk,...ijl->...kl", aux, jnp.asarray(polarization_tensor).T)
+    return jnp.einsum("...ijk,...ijl->...kl", arms_tensor, polarization_tensor.T)
+
+
+@jax.jit
+def geometrical_factor_PC_angles(
+    arms_matrix_rescaled: jax.Array, theta: ArrayLike, phi: ArrayLike
+) -> tuple[jax.Array, jax.Array]:
+    """
+    Computes the plus/cross geometrical antenna-pattern factors for each detector arm,
+    given the sky position.
+
+    Args:
+        arms_matrix_rescaled (jax.Array): Detector arm vectors rescaled by the arm
+        length, with shape (configurations, vectorial_index (3), arms (6)).
+        theta (float or ArrayLike): Colatitude(s) of the sky position(s), in radians.
+        phi (float or ArrayLike): Longitude(s) of the sky position(s), in radians.
+
+    Returns:
+        tuple: A tuple ``(G_plus, G_cross)`` of jax.Array, each with shape
+            (configurations, arms, pixels), giving the plus and cross
+            geometrical factors for every arm and sky position.
+    """
+    e_plus, e_cross = polarization_tensors_PC_angles(theta, phi)
+
+    return (
+        geometrical_factor(arms_matrix_rescaled, e_plus),
+        geometrical_factor(arms_matrix_rescaled, e_cross),
+    )
+
+
+@jax.jit
+def geometrical_factor_LR_angles(
+    arms_matrix_rescaled: jax.Array, theta: ArrayLike, phi: ArrayLike
+) -> tuple[jax.Array, jax.Array]:
+    """
+    Computes the left/right geometrical antenna-pattern factors for each detector arm,
+    given the sky position.
+
+    Args:
+        arms_matrix_rescaled (jax.Array): Detector arm vectors rescaled by the arm
+        length, with shape (configurations, vectorial_index (3), arms (6)).
+        theta (float or ArrayLike): Colatitude(s) of the sky position(s), in radians.
+        phi (float or ArrayLike): Longitude(s) of the sky position(s), in radians.
+
+    Returns:
+        tuple: A tuple ``(G_L, G_R)`` of jax.Array, each with shape
+            (configurations, arms, pixels), giving the left and right
+            geometrical factors for every arm and sky position.
+    """
+    e_L, e_R = polarization_tensors_LR_angles(theta, phi)
+
+    return (
+        geometrical_factor(arms_matrix_rescaled, e_L),
+        geometrical_factor(arms_matrix_rescaled, e_R),
+    )
 
 
 @jax.jit
 def xi_k_no_G(
-    unit_wavevector: ArrayLike, x_vector: ArrayLike, arms_matrix_rescaled: ArrayLike
+    unit_wavevector: jax.Array, x_vector: jax.Array, arms_matrix_rescaled: jax.Array
 ) -> jax.Array:
     """
     Computes the finite-arm-length transfer function of the single-link
     response, before the geometrical antenna-pattern factor is applied (see
-    :func:`xi_k_Avec_func`, which combines this with :func:`geometrical_factor`).
+    :func:`xi_k_A`, which combines this with :func:`geometrical_factor`).
 
     Args:
-        unit_wavevector (ArrayLike): Unit wavevector(s), with shape
+        unit_wavevector (jax.Array): Unit wavevector(s), with shape
             (vectorial_index (3), pixels).
-        x_vector (ArrayLike): Vector of ``2 pi f L / c`` values over
+        x_vector (jax.Array): Vector of ``2 pi f L / c`` values over
             frequency.
-        arms_matrix_rescaled (ArrayLike): Detector arm vectors rescaled by
+        arms_matrix_rescaled (jax.Array): Detector arm vectors rescaled by
             the arm length, with shape (configurations, vectorial_index (3),
             arms (6)).
 
@@ -197,6 +320,7 @@ def xi_k_no_G(
     """
 
     k_dot_arms = jnp.einsum("...ij,ik->...jk", arms_matrix_rescaled, unit_wavevector)
+
     # These guys will be configurations, arms, pixel
     comb_plus = 1.0 + k_dot_arms
     comb_minus = 1.0 - k_dot_arms
@@ -211,23 +335,23 @@ def xi_k_no_G(
 
 @jax.jit
 def position_exponential(
-    positions_detector_frame_rescaled: ArrayLike,
-    unit_wavevector: ArrayLike,
-    x_vector: ArrayLike,
+    positions_detector_frame_rescaled: jax.Array,
+    unit_wavevector: jax.Array,
+    x_vector: jax.Array,
 ) -> jax.Array:
     """
     Computes the plane-wave phase factor picked up by each satellite due to
     its position relative to the detector-frame center.
 
     Args:
-        positions_detector_frame_rescaled (ArrayLike): Satellite positions
+        positions_detector_frame_rescaled (jax.Array): Satellite positions
             relative to the detector-frame center (already shifted for
             numerical precision in the dot product below), rescaled by the
             arm length, with shape (configurations, vectorial_index (3),
             satellite (3)).
-        unit_wavevector (ArrayLike): Unit wavevector(s), with shape
+        unit_wavevector (jax.Array): Unit wavevector(s), with shape
             (vectorial_index (3), pixels).
-        x_vector (ArrayLike): Vector of ``2 pi f L / c`` values over
+        x_vector (jax.Array): Vector of ``2 pi f L / c`` values over
             frequency.
 
     Returns:
@@ -246,11 +370,11 @@ def position_exponential(
 
 
 @jax.jit
-def xi_k_Avec_func(
-    arms_matrix_rescaled: ArrayLike,
-    unit_wavevector: ArrayLike,
-    x_vector: ArrayLike,
-    geometrical: ArrayLike,
+def xi_k_A(
+    arms_matrix_rescaled: jax.Array,
+    unit_wavevector: jax.Array,
+    x_vector: jax.Array,
+    geometrical: jax.Array,
 ) -> jax.Array:
     """
     Combines the finite-arm-length transfer function (:func:`xi_k_no_G`)
@@ -259,14 +383,14 @@ def xi_k_Avec_func(
     factors.
 
     Args:
-        arms_matrix_rescaled (ArrayLike): Detector arm vectors rescaled by
+        arms_matrix_rescaled (jax.Array): Detector arm vectors rescaled by
             the arm length, with shape (configurations, vectorial_index (3),
             arms (6)).
-        unit_wavevector (ArrayLike): Unit wavevector(s), with shape
+        unit_wavevector (jax.Array): Unit wavevector(s), with shape
             (vectorial_index (3), pixels).
-        x_vector (ArrayLike): Vector of ``2 pi f L / c`` values over
+        x_vector (jax.Array): Vector of ``2 pi f L / c`` values over
             frequency.
-        geometrical (ArrayLike): Geometrical antenna-pattern factor as
+        geometrical (jax.Array): Geometrical antenna-pattern factor as
             returned by :func:`geometrical_factor`, with shape (configurations,
             arms, pixels).
 
@@ -282,13 +406,77 @@ def xi_k_Avec_func(
     return jnp.einsum("...ijk,...jk->...ijk", xi_vec, geometrical)
 
 
+def xi_k_A_PC_angles(
+    arms_matrix_rescaled: jax.Array,
+    theta: ArrayLike,
+    phi: ArrayLike,
+    x_vector: jax.Array,
+) -> tuple[jax.Array, jax.Array]:
+    """
+    Computes the single-link response kernel for plus/cross polarizations, given the sky
+    position.
+
+    Args:
+        arms_matrix_rescaled (jax.Array): Detector arm vectors rescaled by
+            the arm length, with shape (configurations, vectorial_index (3),
+            arms (6)).
+        theta (ArrayLike): Polar angle(s) of the sky position, with shape
+            (pixels,).
+        phi (ArrayLike): Azimuthal angle(s) of the sky position, with shape
+            (pixels,).
+        x_vector (jax.Array): Vector of ``2 pi f L / c`` values over
+            frequency.
+
+    Returns:
+        jax.Array: The single-link response kernel, with shape
+            (configurations, x_vector, arms, pixels).
+    """
+    G_plus, G_cross = geometrical_factor_PC_angles(arms_matrix_rescaled, theta, phi)
+
+    xi_k_P = xi_k_A(arms_matrix_rescaled, unit_vec(theta, phi), x_vector, G_plus)
+    xi_k_C = xi_k_A(arms_matrix_rescaled, unit_vec(theta, phi), x_vector, G_cross)
+
+    return xi_k_P, xi_k_C
+
+
+def xi_k_A_LR_angles(
+    arms_matrix_rescaled: jax.Array,
+    theta: ArrayLike,
+    phi: ArrayLike,
+    x_vector: jax.Array,
+) -> tuple[jax.Array, jax.Array]:
+    """
+    Computes the single-link response kernel for left/right polarizations, given the sky
+    position.
+
+    Args:
+        arms_matrix_rescaled (jax.Array): Detector arm vectors rescaled by the arm
+        length, with shape (configurations, vectorial_index (3), arms (6)).
+        theta (ArrayLike): Polar angle(s) of the sky position, with shape (pixels,).
+        phi (ArrayLike): Azimuthal angle(s) of the sky position, with shape (pixels,).
+        x_vector (jax.Array): Vector of ``2 pi f L / c`` values over frequency.
+
+    Returns:
+        tuple: A tuple ``(xi_k_L, xi_k_R)`` of jax.Array, each with shape
+            (configurations, x_vector, arms, pixels), giving the single-link
+            response kernel for left and right polarizations for every arm and
+            sky position.
+    """
+    G_left, G_right = geometrical_factor_LR_angles(arms_matrix_rescaled, theta, phi)
+
+    xi_k_L = xi_k_A(arms_matrix_rescaled, unit_vec(theta, phi), x_vector, G_left)
+    xi_k_R = xi_k_A(arms_matrix_rescaled, unit_vec(theta, phi), x_vector, G_right)
+
+    return xi_k_L, xi_k_R
+
+
 @jax.jit
 def single_link_response(
-    positions_rescaled: ArrayLike,
-    arms_matrix_rescaled: ArrayLike,
-    wavevector: ArrayLike,
-    x_vector: ArrayLike,
-    xi_k_Avec: ArrayLike,
+    positions_rescaled: jax.Array,
+    arms_matrix_rescaled: jax.Array,
+    wavevector: jax.Array,
+    x_vector: jax.Array,
+    xi_k_A: jax.Array,
 ) -> jax.Array:
     """
     Computes the full single-link (arm) strain response, combining the
@@ -296,18 +484,18 @@ def single_link_response(
     position phase factors.
 
     Args:
-        positions_rescaled (ArrayLike): Satellite positions rescaled by the
+        positions_rescaled (jax.Array): Satellite positions rescaled by the
             arm length, with shape (configurations, vectorial_index (3),
             satellite (3)).
-        arms_matrix_rescaled (ArrayLike): Detector arm vectors rescaled by
+        arms_matrix_rescaled (jax.Array): Detector arm vectors rescaled by
             the arm length, with shape (configurations, vectorial_index (3),
             arms (6)).
-        wavevector (ArrayLike): Unit wavevector(s), with shape
+        wavevector (jax.Array): Unit wavevector(s), with shape
             (vectorial_index (3), pixels).
-        x_vector (ArrayLike): Vector of ``2 pi f L / c`` values over
+        x_vector (jax.Array): Vector of ``2 pi f L / c`` values over
             frequency.
-        xi_k_Avec (ArrayLike): Single-link response kernel as returned by
-            :func:`xi_k_Avec_func`, with shape (configurations, x_vector, arms,
+        xi_k_A (jax.Array): Single-link response kernel as returned by
+            :func:`xi_k_A`, with shape (configurations, x_vector, arms,
             pixels).
 
     Returns:
@@ -339,18 +527,92 @@ def single_link_response(
     prefactor = jnp.einsum("i,...ij->...ij", x_vector, prefactor)
 
     # This will be configurations, x_vector, arms, pixels
-    return jnp.einsum(
-        "...ij,...ijk->...ijk", prefactor, position_exp_factor * xi_k_Avec
+    return jnp.einsum("...ij,...ijk->...ijk", prefactor, position_exp_factor * xi_k_A)
+
+
+@jax.jit
+def single_link_response_PC_angles(
+    positions_rescaled: jax.Array,
+    arms_matrix_rescaled: jax.Array,
+    theta: ArrayLike,
+    phi: ArrayLike,
+    x_vector: jax.Array,
+) -> tuple[jax.Array, jax.Array]:
+    """
+    Computes the full single-link (arm) strain response for plus/cross polarizations,
+    given the sky position.
+
+    Args:
+        positions_rescaled (jax.Array): Satellite positions rescaled by the arm length,
+        with shape (configurations, vectorial_index (3), satellite (3)).
+        arms_matrix_rescaled (jax.Array): Detector arm vectors rescaled by the arm
+        length, with shape (configurations, vectorial_index (3), arms (6)).
+        theta (ArrayLike): Polar angle(s) of the sky position, with shape (pixels,).
+        phi (ArrayLike): Azimuthal angle(s) of the sky position, with shape (pixels,).
+        x_vector (jax.Array): Vector of ``2 pi f L / c`` values over frequency.
+
+    Returns:
+        tuple: A tuple ``(response_P, response_C)`` of jax.Array, each with shape
+        (configurations, x_vector, arms, pixels), giving the single-link strain response
+        for plus and cross polarizations for every arm and sky position.
+    """
+    xi_k_P, xi_k_C = xi_k_A_PC_angles(arms_matrix_rescaled, theta, phi, x_vector)
+
+    response_P = single_link_response(
+        positions_rescaled, arms_matrix_rescaled, unit_vec(theta, phi), x_vector, xi_k_P
     )
+    response_C = single_link_response(
+        positions_rescaled, arms_matrix_rescaled, unit_vec(theta, phi), x_vector, xi_k_C
+    )
+
+    return response_P, response_C
+
+
+@jax.jit
+def single_link_response_LR_angles(
+    positions_rescaled: jax.Array,
+    arms_matrix_rescaled: jax.Array,
+    theta: ArrayLike,
+    phi: ArrayLike,
+    x_vector: jax.Array,
+) -> tuple[jax.Array, jax.Array]:
+    """
+    Computes the full single-link (arm) strain response for left/right polarizations,
+    given the sky position.
+
+    Args:
+        positions_rescaled (jax.Array): Satellite positions rescaled by the arm length,
+        with shape (configurations, vectorial_index (3), satellite (3)).
+        arms_matrix_rescaled (jax.Array): Detector arm vectors rescaled by the arm
+        length, with shape (configurations, vectorial_index (3), arms (6)).
+        theta (ArrayLike): Polar angle(s) of the sky position, with shape (pixels,).
+        phi (ArrayLike): Azimuthal angle(s) of the sky position, with shape (pixels,).
+        x_vector (jax.Array): Vector of ``2 pi f L / c`` values over frequency.
+
+    Returns:
+        tuple: A tuple ``(response_L, response_R)`` of jax.Array, each with shape
+        (configurations, x_vector, arms, pixels), giving the single-link strain response
+        for left and right polarizations for every arm and sky position.
+    """
+    xi_k_L, xi_k_R = xi_k_A_LR_angles(arms_matrix_rescaled, theta, phi, x_vector)
+
+    response_L = single_link_response(
+        positions_rescaled, arms_matrix_rescaled, unit_vec(theta, phi), x_vector, xi_k_L
+    )
+    response_R = single_link_response(
+        positions_rescaled, arms_matrix_rescaled, unit_vec(theta, phi), x_vector, xi_k_R
+    )
+
+    return response_L, response_R
 
 
 @jax.jit
 def get_single_link_response(
-    polarization: ArrayLike,
-    arms_matrix_rescaled: ArrayLike,
-    wavevector: ArrayLike,
-    x_vector: ArrayLike,
-    positions_rescaled: ArrayLike,
+    polarization_tensor: jax.Array,
+    arms_matrix_rescaled: jax.Array,
+    wavevector: jax.Array,
+    x_vector: jax.Array,
+    positions_rescaled: jax.Array,
 ) -> jax.Array:
     """
     Computes the single-link strain response for a given polarization
@@ -358,32 +620,122 @@ def get_single_link_response(
     the phase factors.
 
     Args:
-        polarization (ArrayLike): Polarization tensor, with shape (pixels,
+        polarization_tensor (jax.Array): Polarization tensor, with shape (pixels,
             vectorial_index (3), vectorial_index (3)), e.g. one of the tensors
             returned by :func:`polarization_tensors_LR` or
             :func:`polarization_tensors_PC`.
-        arms_matrix_rescaled (ArrayLike): Detector arm vectors rescaled by
-            the arm length, with shape (configurations, vectorial_index (3),
-            arms (6)).
-        wavevector (ArrayLike): Unit wavevector(s), with shape
-            (vectorial_index (3), pixels).
-        x_vector (ArrayLike): Vector of ``2 pi f L / c`` values over
-            frequency.
-        positions_rescaled (ArrayLike): Satellite positions rescaled by the
-            arm length, with shape (configurations, vectorial_index (3),
-            satellite (3)).
+        arms_matrix_rescaled (jax.Array): Detector arm vectors rescaled by
+            the arm length, with shape (configurations, vectorial_index (3), arms (6)).
+        wavevector (jax.Array): Unit wavevector(s), with shape (vectorial_index (3),
+            pixels).
+        x_vector (jax.Array): Vector of ``2 pi f L / c`` values over frequency.
+        positions_rescaled (jax.Array): Satellite positions rescaled by the arm length,
+            with shape (configurations, vectorial_index (3), satellite (3)).
 
     Returns:
-        jax.Array: The single-link strain response, with shape
-            (configurations, x_vector, arms, pixels).
+        jax.Array: The single-link strain response, with shape (configurations,
+            x_vector, arms, pixels).
     """
     # This computes the geometrical factor
-    geometrical = geometrical_factor(arms_matrix_rescaled, polarization)
+    geometrical = geometrical_factor(arms_matrix_rescaled, polarization_tensor)
 
     # This computes the xi vectors
-    xi_k_vec = xi_k_Avec_func(arms_matrix_rescaled, wavevector, x_vector, geometrical)
+    xi_k_vec = xi_k_A(arms_matrix_rescaled, wavevector, x_vector, geometrical)
 
     # This will be configurations, x_vector, arms, pixels
     return single_link_response(
         positions_rescaled, arms_matrix_rescaled, wavevector, x_vector, xi_k_vec
     )
+
+
+@jax.jit
+def get_single_link_response_retarded(
+    polarization_tensor: jax.Array,
+    arm_vector_retarded_rescaled: jax.Array,
+    ltt_rescaled: jax.Array,
+    wavevector: jax.Array,
+    x_vector: jax.Array,
+    receiver_positions_rescaled: jax.Array,
+) -> jax.Array:
+    """
+    Single-link strain response for a genuinely asymmetric arm (``12 !=
+    21``): the emitter's position is taken at its own light-travel-time-
+    retarded instant rather than simultaneously with the receiver, so the
+    arm vector -- and this transfer function -- differs by propagation
+    direction. :func:`get_single_link_response` assumes one shared,
+    simultaneous geometry for a truly static arm; this is its exact
+    counterpart for a moving one.
+
+    The distinction that matters here is between two different lengths:
+    `ltt_rescaled` is the (simultaneous-distance-based) light-travel-time
+    estimate that `arm_vector_retarded_rescaled`'s own emission time was
+    computed from, while ``jnp.linalg.norm(arm_vector_retarded_rescaled,
+    axis=1)`` is the *true* retarded arm length -- these differ by exactly
+    the distance the emitter moved during the transit. Conflating the two
+    into one shared "arm length" (as :func:`get_single_link_response` does,
+    fine for a static arm where they coincide) leaves a residual error that
+    does not shrink with a shorter observation window, since it is not a
+    "segment span" effect at all; keeping them separate here is what makes
+    this exact rather than merely an improved approximation.
+
+    Args:
+        polarization_tensor (jax.Array): Polarization tensor, with shape (pixels,
+            vectorial_index (3), vectorial_index (3)).
+        arm_vector_retarded_rescaled (jax.Array): Vector from the receiver's
+            current position to the emitter's position at the retarded
+            (emission) time, rescaled by the nominal arm length, with shape
+            (configurations, vectorial_index (3), arms).
+        ltt_rescaled (jax.Array): The light-travel-time estimate used to
+            find the retarded emission time, rescaled to the same
+            dimensionless units as `arm_vector_retarded_rescaled`'s
+            magnitude (i.e. light-travel-time * light_speed / nominal arm
+            length), with shape (configurations, arms).
+        wavevector (jax.Array): Unit wavevector(s), with shape
+            (vectorial_index (3), pixels).
+        x_vector (jax.Array): Vector of ``2 pi f L / c`` values over
+            frequency (`L` the nominal arm length).
+        receiver_positions_rescaled (jax.Array): Receiver's position at each
+            arm's own reception time, rescaled by the nominal arm length,
+            with shape (configurations, vectorial_index (3), arms).
+
+    Returns:
+        jax.Array: The single-link strain response, with shape
+            (configurations, x_vector, arms, pixels).
+    """
+    ltt_rescaled = jnp.asarray(ltt_rescaled)
+    arm_length_retarded_rescaled = jnp.linalg.norm(arm_vector_retarded_rescaled, axis=1)
+    unit_arm = arm_vector_retarded_rescaled / arm_length_retarded_rescaled[:, None, :]
+
+    k_dot_arm = jnp.einsum("...ij,ik->...jk", arm_vector_retarded_rescaled, wavevector)
+    comb_plus = ltt_rescaled[..., None] + k_dot_arm
+    comb_minus = ltt_rescaled[..., None] - k_dot_arm
+
+    prod_plus = jnp.einsum("i,...kl->...ikl", x_vector, comb_plus)
+    prod_minus = jnp.einsum("i,...kl->...ikl", x_vector, comb_minus)
+    xi_no_G = jnp.exp(0.5j * prod_minus) * jnp.sinc(prod_plus / 2.0 / jnp.pi)
+
+    # geometrical_factor's own arm_lengths**2 scaling is only exactly right
+    # when fed a vector whose magnitude equals ltt_rescaled -- which
+    # arm_vector_retarded_rescaled generally doesn't (that's the whole
+    # asymmetry) -- so geometrical_factor is fed a unit vector instead, and
+    # the exact scaling this formula's own retardation structure requires
+    # is applied explicitly here.
+    geometrical_unit = geometrical_factor(unit_arm, polarization_tensor)
+    length_correction = (arm_length_retarded_rescaled[..., None] * comb_plus) / (
+        ltt_rescaled[..., None] * (arm_length_retarded_rescaled[..., None] + k_dot_arm)
+    )
+    geometrical = geometrical_unit * length_correction
+
+    xi_k_A = jnp.einsum("...ijk,...jk->...ijk", xi_no_G, geometrical)
+
+    position_exp_factor = position_exponential(
+        receiver_positions_rescaled, wavevector, x_vector
+    )
+
+    t_retarded_factor = jnp.exp(
+        jnp.einsum("i,...j->...ij", -1j * x_vector, ltt_rescaled)
+    )
+    prefactor = jnp.einsum("...j,...ij->...ij", ltt_rescaled, t_retarded_factor)
+    prefactor = jnp.einsum("i,...ij->...ij", x_vector, prefactor)
+
+    return jnp.einsum("...ij,...ijk->...ijk", prefactor, position_exp_factor * xi_k_A)

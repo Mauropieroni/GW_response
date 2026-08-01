@@ -94,7 +94,7 @@ class TestSingleLink(unittest.TestCase):
             float(jnp.sum(jnp.abs(geomtrical_factor - save_arr))), 0.0
         )
 
-    def test_xi_k_Avec(self):
+    def test_xi_k_A(self):
         lisa = gwr.LISA()
         freqs = jnp.logspace(-5, 0, 300)
         pixel = gwr.Pixel()
@@ -106,14 +106,14 @@ class TestSingleLink(unittest.TestCase):
             arms_matrix_rescaled=lisa.detector_arms(0.0) / lisa.armlength,
             polarization_tensor=e1L,
         )
-        xi_k_Avec = gwr.xi_k_Avec_func(
+        xi_k_A = gwr.xi_k_A(
             arms_matrix_rescaled=lisa.detector_arms(0.0) / lisa.armlength,
             unit_wavevector=unit_vector,
             x_vector=lisa.x(freqs),
             geometrical=geomtrical_factor,
         )
-        save_arr = np.load(TEST_DATA_PATH + "xi_k_Avec.npy")
-        self.assertAlmostEqual(float(jnp.sum(jnp.abs(xi_k_Avec - save_arr))), 0.0)
+        save_arr = np.load(TEST_DATA_PATH + "xi_k_A.npy")
+        self.assertAlmostEqual(float(jnp.sum(jnp.abs(xi_k_A - save_arr))), 0.0)
 
     def test_single_link_response(self):
         lisa = gwr.LISA()
@@ -127,7 +127,7 @@ class TestSingleLink(unittest.TestCase):
             arms_matrix_rescaled=lisa.detector_arms(0.0) / lisa.armlength,
             polarization_tensor=e1L,
         )
-        xi_k_Avec = gwr.xi_k_Avec_func(
+        xi_k_A = gwr.xi_k_A(
             arms_matrix_rescaled=lisa.detector_arms(0.0) / lisa.armlength,
             unit_wavevector=unit_vector,
             x_vector=lisa.x(freqs),
@@ -138,7 +138,7 @@ class TestSingleLink(unittest.TestCase):
             arms_matrix_rescaled=lisa.detector_arms(0.0) / lisa.armlength,
             wavevector=unit_vector,
             x_vector=lisa.x(freqs),
-            xi_k_Avec=xi_k_Avec,
+            xi_k_A=xi_k_A,
         )
         save_arr = np.load(TEST_DATA_PATH + "single_link_response.npy")
         self.assertAlmostEqual(
@@ -271,7 +271,7 @@ class TestSingleLink_ligo(unittest.TestCase):
             float(jnp.sum(jnp.abs(geomtrical_factor - save_arr))), 0.0
         )
 
-    def test_xi_k_Avec(self):
+    def test_xi_k_A(self):
         ligo = gwr.LIGO()
         freqs = jnp.logspace(1, 5, 1000)
         pixel = gwr.Pixel()
@@ -283,14 +283,14 @@ class TestSingleLink_ligo(unittest.TestCase):
             arms_matrix_rescaled=ligo.detector_arms(0.0) / ligo.armlength,
             polarization_tensor=e1L,
         )
-        xi_k_Avec = gwr.xi_k_Avec_func(
+        xi_k_A = gwr.xi_k_A(
             arms_matrix_rescaled=ligo.detector_arms(0.0) / ligo.armlength,
             unit_wavevector=unit_vector,
             x_vector=ligo.x(freqs),
             geometrical=geomtrical_factor,
         )
-        save_arr = np.load(TEST_DATA_PATH_ligo + "xi_k_Avec.npy")
-        self.assertAlmostEqual(float(jnp.sum(jnp.abs(xi_k_Avec - save_arr))), 0.0)
+        save_arr = np.load(TEST_DATA_PATH_ligo + "xi_k_A.npy")
+        self.assertAlmostEqual(float(jnp.sum(jnp.abs(xi_k_A - save_arr))), 0.0)
 
     def test_single_link_response(self):
         ligo = gwr.LIGO()
@@ -304,7 +304,7 @@ class TestSingleLink_ligo(unittest.TestCase):
             arms_matrix_rescaled=ligo.detector_arms(0.0) / ligo.armlength,
             polarization_tensor=e1L,
         )
-        xi_k_Avec = gwr.xi_k_Avec_func(
+        xi_k_A = gwr.xi_k_A(
             arms_matrix_rescaled=ligo.detector_arms(0.0) / ligo.armlength,
             unit_wavevector=unit_vector,
             x_vector=ligo.x(freqs),
@@ -315,7 +315,7 @@ class TestSingleLink_ligo(unittest.TestCase):
             arms_matrix_rescaled=ligo.detector_arms(0.0) / ligo.armlength,
             wavevector=unit_vector,
             x_vector=ligo.x(freqs),
-            xi_k_Avec=xi_k_Avec,
+            xi_k_A=xi_k_A,
         )
         save_arr = np.load(TEST_DATA_PATH_ligo + "single_link_response.npy")
         self.assertAlmostEqual(

@@ -17,7 +17,7 @@ class TestResponse_LISA(unittest.TestCase):
 
         theta, phi = pixel.theta_pixel, pixel.phi_pixel
         assert theta is not None and phi is not None
-        single_link_response = response.get_single_link_response(
+        single_link_response = response.get_single_link_response_fd(
             lisa,
             times_in_years=jnp.array([0.0]),
             theta_array=theta,
@@ -33,7 +33,7 @@ class TestResponse_LISA(unittest.TestCase):
         self.assertAlmostEqual(
             float(jnp.max(jnp.abs(single_link_response["R"] - save_arr))), 0.0
         )
-        linear_integrand = response.get_linear_integrand(
+        linear_integrand = response.get_linear_integrand_fd(
             lisa,
             times_in_years=jnp.array([0.0]),
             theta_array=theta,
@@ -108,7 +108,7 @@ class TestResponse_LIGO(unittest.TestCase):
         theta, phi = pixel.theta_pixel, pixel.phi_pixel
         assert theta is not None and phi is not None
 
-        single_link_response = response.get_single_link_response(
+        single_link_response = response.get_single_link_response_fd(
             ligo,
             times_in_years=jnp.array([0.0]),
             theta_array=theta,
@@ -125,7 +125,7 @@ class TestResponse_LIGO(unittest.TestCase):
             float(jnp.max(jnp.abs(single_link_response["R"] - save_arr))), 0.0
         )
 
-        linear_integrand = response.get_linear_integrand(
+        linear_integrand = response.get_linear_integrand_fd(
             ligo,
             times_in_years=jnp.array([0.0]),
             theta_array=theta,

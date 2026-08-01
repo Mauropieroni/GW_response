@@ -113,7 +113,7 @@ class TestTDI(unittest.TestCase):
             arms_matrix_rescaled=lisa.detector_arms(0.0) / lisa.armlength,
             polarization_tensor=e1L,
         )
-        xi_k_Avec = gwr.xi_k_Avec_func(
+        xi_k_A = gwr.xi_k_A(
             arms_matrix_rescaled=lisa.detector_arms(0.0) / lisa.armlength,
             unit_wavevector=unit_vector,
             x_vector=lisa.x(freqs),
@@ -124,7 +124,7 @@ class TestTDI(unittest.TestCase):
             arms_matrix_rescaled=lisa.detector_arms(0.0) / lisa.armlength,
             wavevector=unit_vector,
             x_vector=lisa.x(freqs),
-            xi_k_Avec=xi_k_Avec,
+            xi_k_A=xi_k_A,
         )
         tdi_projection = gwr.build_tdi(
             TDI_idx=gwr.TDI_map["XYZ"],  # XYZ basis
@@ -175,7 +175,7 @@ class TestTDI(unittest.TestCase):
             arms_matrix_rescaled=lisa.detector_arms(0.0) / lisa.armlength,
             polarization_tensor=e1L,
         )
-        xi_k_Avec = gwr.xi_k_Avec_func(
+        xi_k_A = gwr.xi_k_A(
             arms_matrix_rescaled=lisa.detector_arms(0.0) / lisa.armlength,
             unit_wavevector=unit_vector,
             x_vector=lisa.x(freqs),
@@ -186,7 +186,7 @@ class TestTDI(unittest.TestCase):
             arms_matrix_rescaled=lisa.detector_arms(0.0) / lisa.armlength,
             wavevector=unit_vector,
             x_vector=lisa.x(freqs),
-            xi_k_Avec=xi_k_Avec,
+            xi_k_A=xi_k_A,
         )
         arms_matrix_rescaled = lisa.detector_arms(0.0) / lisa.armlength
         x_vector = lisa.x(freqs)

@@ -189,7 +189,7 @@ class Detector(ABC):
         Args:
             single_link (dict): Single-link response per polarization, e.g.
                 as returned by
-                :meth:`gw_response.response.Response.get_single_link_response`.
+                :meth:`gw_response.response.Response.get_single_link_response_fd`.
             combination_matrix (ArrayLike): Mixing matrix as built by
                 :meth:`combination_matrix`.
 
