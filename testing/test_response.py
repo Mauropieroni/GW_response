@@ -4,7 +4,7 @@ import gw_response as gwr
 import os
 import numpy as np
 
-TEST_DATA_PATH = os.path.join(os.path.dirname(__file__), "test_data/")
+TEST_DATA_PATH_lisa = os.path.join(os.path.dirname(__file__), "test_data_lisa/")
 TEST_DATA_PATH_ligo = os.path.join(os.path.dirname(__file__), "test_data_ligo/")
 
 
@@ -25,11 +25,11 @@ class TestResponse_LISA(unittest.TestCase):
             frequency_array=freqs,
             polarization="LR",
         )
-        save_arr = np.load(TEST_DATA_PATH + "single_link_response_L.npy")
+        save_arr = np.load(TEST_DATA_PATH_lisa + "single_link_response_L.npy")
         self.assertAlmostEqual(
             float(jnp.max(jnp.abs(single_link_response["L"] - save_arr))), 0.0
         )
-        save_arr = np.load(TEST_DATA_PATH + "single_link_response_R.npy")
+        save_arr = np.load(TEST_DATA_PATH_lisa + "single_link_response_R.npy")
         self.assertAlmostEqual(
             float(jnp.max(jnp.abs(single_link_response["R"] - save_arr))), 0.0
         )
@@ -42,11 +42,11 @@ class TestResponse_LISA(unittest.TestCase):
             combination="XYZ",
             polarization="LR",
         )
-        save_arr = np.load(TEST_DATA_PATH + "linear_integrand_L.npy")
+        save_arr = np.load(TEST_DATA_PATH_lisa + "linear_integrand_L.npy")
         self.assertAlmostEqual(
             float(jnp.max(jnp.abs(linear_integrand["L"] - save_arr))), 0.0
         )
-        save_arr = np.load(TEST_DATA_PATH + "linear_integrand_R.npy")
+        save_arr = np.load(TEST_DATA_PATH_lisa + "linear_integrand_R.npy")
         self.assertAlmostEqual(
             float(jnp.max(jnp.abs(linear_integrand["R"] - save_arr))), 0.0
         )
@@ -59,14 +59,14 @@ class TestResponse_LISA(unittest.TestCase):
             combination="XYZ",
             polarization="LR",
         )
-        save_arr = np.load(TEST_DATA_PATH + "quadratic_response_XYZ_LL.npy")
+        save_arr = np.load(TEST_DATA_PATH_lisa + "quadratic_response_XYZ_LL.npy")
         self.assertAlmostEqual(
             float(
                 jnp.max(jnp.abs(response.quadratic_integrated["XYZ"]["LL"] - save_arr))
             ),
             0.0,
         )
-        save_arr = np.load(TEST_DATA_PATH + "quadratic_response_XYZ_RR.npy")
+        save_arr = np.load(TEST_DATA_PATH_lisa + "quadratic_response_XYZ_RR.npy")
         self.assertAlmostEqual(
             float(
                 jnp.max(jnp.abs(response.quadratic_integrated["XYZ"]["RR"] - save_arr))
@@ -82,14 +82,14 @@ class TestResponse_LISA(unittest.TestCase):
             combination="AET",
             polarization="LR",
         )
-        save_arr = np.load(TEST_DATA_PATH + "quadratic_response_AET_LL.npy")
+        save_arr = np.load(TEST_DATA_PATH_lisa + "quadratic_response_AET_LL.npy")
         self.assertAlmostEqual(
             float(
                 jnp.max(jnp.abs(response.quadratic_integrated["AET"]["LL"] - save_arr))
             ),
             0.0,
         )
-        save_arr = np.load(TEST_DATA_PATH + "quadratic_response_AET_RR.npy")
+        save_arr = np.load(TEST_DATA_PATH_lisa + "quadratic_response_AET_RR.npy")
         self.assertAlmostEqual(
             float(
                 jnp.max(jnp.abs(response.quadratic_integrated["AET"]["RR"] - save_arr))
@@ -141,6 +141,30 @@ class TestResponse_LIGO(unittest.TestCase):
         save_arr = np.load(TEST_DATA_PATH_ligo + "linear_integrand_R.npy")
         self.assertAlmostEqual(
             float(jnp.max(jnp.abs(linear_integrand["R"] - save_arr))), 0.0
+        )
+
+        response.compute_detector(
+            ligo,
+            times_in_years=jnp.array([0.0]),
+            theta_array=theta,
+            phi_array=phi,
+            frequency_array=freqs,
+            combination="Michelson",
+            polarization="LR",
+        )
+        save_arr = np.load(TEST_DATA_PATH_ligo + "quadratic_response_Michelson_L.npy")
+        self.assertAlmostEqual(
+            float(
+                jnp.max(jnp.abs(response.quadratic_integrated["Michelson"]["L"] - save_arr))
+            ),
+            0.0,
+        )
+        save_arr = np.load(TEST_DATA_PATH_ligo + "quadratic_response_Michelson_R.npy")
+        self.assertAlmostEqual(
+            float(
+                jnp.max(jnp.abs(response.quadratic_integrated["Michelson"]["R"] - save_arr))
+            ),
+            0.0,
         )
 
 

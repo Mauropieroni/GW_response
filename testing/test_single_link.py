@@ -5,6 +5,7 @@ import os
 import numpy as np
 
 TEST_DATA_PATH = os.path.join(os.path.dirname(__file__), "test_data/")
+TEST_DATA_PATH_lisa = os.path.join(os.path.dirname(__file__), "test_data_lisa/")
 TEST_DATA_PATH_ligo = os.path.join(os.path.dirname(__file__), "test_data_ligo/")
 
 
@@ -51,7 +52,7 @@ class TestSingleLink(unittest.TestCase):
             x_vector=lisa.x(freqs),
             arms_matrix_rescaled=lisa.detector_arms(0.0) / lisa.armlength,
         )
-        save_arr = np.load(TEST_DATA_PATH + "xi_k.npy")
+        save_arr = np.load(TEST_DATA_PATH_lisa + "xi_k.npy")
         self.assertAlmostEqual(float(jnp.sum(jnp.abs(xi_k - save_arr))), 0.0)
 
     def test_position_exp(self):
@@ -73,7 +74,7 @@ class TestSingleLink(unittest.TestCase):
             unit_wavevector=unit_vector,
             x_vector=lisa.x(freqs),
         )
-        save_arr = np.load(TEST_DATA_PATH + "position_exp.npy")
+        save_arr = np.load(TEST_DATA_PATH_lisa + "position_exp.npy")
         self.assertAlmostEqual(
             float(jnp.sum(jnp.abs(position_exp - save_arr))),
             0.0,
@@ -89,7 +90,7 @@ class TestSingleLink(unittest.TestCase):
             arms_matrix_rescaled=lisa.detector_arms(0.0) / lisa.armlength,
             polarization_tensor=e1L,
         )
-        save_arr = np.load(TEST_DATA_PATH + "geometrical_factor.npy")
+        save_arr = np.load(TEST_DATA_PATH_lisa + "geometrical_factor.npy")
         self.assertAlmostEqual(
             float(jnp.sum(jnp.abs(geomtrical_factor - save_arr))), 0.0
         )
@@ -112,7 +113,7 @@ class TestSingleLink(unittest.TestCase):
             x_vector=lisa.x(freqs),
             geometrical=geomtrical_factor,
         )
-        save_arr = np.load(TEST_DATA_PATH + "xi_k_A.npy")
+        save_arr = np.load(TEST_DATA_PATH_lisa + "xi_k_A.npy")
         self.assertAlmostEqual(float(jnp.sum(jnp.abs(xi_k_A - save_arr))), 0.0)
 
     def test_single_link_response(self):
@@ -140,7 +141,7 @@ class TestSingleLink(unittest.TestCase):
             x_vector=lisa.x(freqs),
             xi_k_A=xi_k_A,
         )
-        save_arr = np.load(TEST_DATA_PATH + "single_link_response.npy")
+        save_arr = np.load(TEST_DATA_PATH_lisa + "single_link_response.npy")
         self.assertAlmostEqual(
             float(jnp.sum(jnp.abs(single_link_response - save_arr))), 0.0
         )
@@ -150,7 +151,7 @@ class TestSingleLink(unittest.TestCase):
             arms_matrix_rescaled=lisa.detector_arms(0.0) / lisa.armlength,
             x_vector=lisa.x(freqs),
         )
-        save_arr = np.load(TEST_DATA_PATH + "linear_response_tdi.npy")
+        save_arr = np.load(TEST_DATA_PATH_lisa + "linear_response_tdi.npy")
         self.assertAlmostEqual(
             float(jnp.sum(jnp.abs(linear_response_tdi - save_arr))), 0.0
         )
@@ -160,14 +161,14 @@ class TestSingleLink(unittest.TestCase):
             arms_matrix_rescaled=lisa.detector_arms(0.0) / lisa.armlength,
             x_vector=lisa.x(freqs),
         )
-        save_arr = np.load(TEST_DATA_PATH + "quadratic_angular_response.npy")
+        save_arr = np.load(TEST_DATA_PATH_lisa + "quadratic_angular_response.npy")
         self.assertAlmostEqual(
             float(jnp.sum(jnp.abs(quadratic_angular_response - save_arr))), 0.0
         )
         quadratic_response_integrated = gwr.quadratic_response_integrated(
             quadratic_angular_response
         )
-        save_arr = np.load(TEST_DATA_PATH + "quadratic_response_integrated.npy")
+        save_arr = np.load(TEST_DATA_PATH_lisa + "quadratic_response_integrated.npy")
         self.assertAlmostEqual(
             float(jnp.sum(jnp.abs(quadratic_response_integrated - save_arr))), 0.0
         )
@@ -180,44 +181,15 @@ class TestSingleLink(unittest.TestCase):
         quadratic_response_integrated = gwr.quadratic_response_integrated(
             quadratic_angular_response_AET
         )
-        save_arr = np.load(TEST_DATA_PATH + "quadratic_response_integrated_AET.npy")
+        save_arr = np.load(
+            TEST_DATA_PATH_lisa + "quadratic_response_integrated_AET.npy"
+        )
         self.assertAlmostEqual(
             float(jnp.sum(jnp.abs(quadratic_response_integrated - save_arr))), 0.0
         )
 
 
 class TestSingleLink_ligo(unittest.TestCase):
-    def test_unit_vector(self):
-        pixel = gwr.Pixel()
-        theta, phi = pixel.theta_pixel, pixel.phi_pixel
-        unit_vector = gwr.unit_vec(theta, phi)
-        save_arr = np.load(TEST_DATA_PATH_ligo + "unit_vector.npy")
-        self.assertAlmostEqual(float(jnp.sum(jnp.abs(unit_vector - save_arr))), 0.0)
-
-    def test_uv(self):
-        pixel = gwr.Pixel()
-        theta, phi = pixel.theta_pixel, pixel.phi_pixel
-        u, v = gwr.uv_analytical(theta, phi)
-        save_arr = np.load(TEST_DATA_PATH_ligo + "u.npy")
-        self.assertAlmostEqual(float(jnp.sum(jnp.abs(u - save_arr))), 0.0)
-        save_arr = np.load(TEST_DATA_PATH_ligo + "v.npy")
-        self.assertAlmostEqual(float(jnp.sum(jnp.abs(v - save_arr))), 0.0)
-        e1, e2 = gwr.polarization_vectors(u, v)
-        save_arr = np.load(TEST_DATA_PATH_ligo + "e1.npy")
-        self.assertAlmostEqual(float(jnp.sum(jnp.abs(e1 - save_arr))), 0.0)
-        save_arr = np.load(TEST_DATA_PATH_ligo + "e2.npy")
-        self.assertAlmostEqual(float(jnp.sum(jnp.abs(e2 - save_arr))), 0.0)
-        e1p, e1c = gwr.polarization_tensors_PC(u, v)
-        e1L, e1R = gwr.polarization_tensors_LR(u, v)
-        save_arr = np.load(TEST_DATA_PATH_ligo + "e1p.npy")
-        self.assertAlmostEqual(float(jnp.sum(jnp.abs(e1p - save_arr))), 0.0)
-        save_arr = np.load(TEST_DATA_PATH_ligo + "e1c.npy")
-        self.assertAlmostEqual(float(jnp.sum(jnp.abs(e1c - save_arr))), 0.0)
-        save_arr = np.load(TEST_DATA_PATH_ligo + "e1L.npy")
-        self.assertAlmostEqual(float(jnp.sum(jnp.abs(e1L - save_arr))), 0.0)
-        save_arr = np.load(TEST_DATA_PATH_ligo + "e1R.npy")
-        self.assertAlmostEqual(float(jnp.sum(jnp.abs(e1R - save_arr))), 0.0)
-
     def test_xi_k(self):
         pixel = gwr.Pixel()
         theta, phi = pixel.theta_pixel, pixel.phi_pixel

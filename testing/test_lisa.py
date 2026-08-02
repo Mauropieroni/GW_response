@@ -6,7 +6,7 @@ import tempfile
 import numpy as np
 import h5py
 
-TEST_DATA_PATH = os.path.join(os.path.dirname(__file__), "test_data/")
+TEST_DATA_PATH = os.path.join(os.path.dirname(__file__), "test_data_lisa/")
 
 
 def write_numerical_orbit_file(path, time_grid, orbit_radius, eccentricity):

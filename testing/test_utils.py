@@ -5,6 +5,7 @@ import os
 import numpy as np
 
 TEST_DATA_PATH = os.path.join(os.path.dirname(__file__), "test_data/")
+TEST_DATA_PATH_lisa = os.path.join(os.path.dirname(__file__), "test_data_lisa/")
 TEST_DATA_PATH_ligo = os.path.join(os.path.dirname(__file__), "test_data_ligo/")
 
 
@@ -36,7 +37,7 @@ class TestUtils(unittest.TestCase):
             arms_matrix_rescaled=lisa.detector_arms(0.0) / lisa.armlength,
             x_vector=lisa.x(freqs),
         )
-        save_arr = np.load(TEST_DATA_PATH + "arm_length_exp.npy")
+        save_arr = np.load(TEST_DATA_PATH_lisa + "arm_length_exp.npy")
         self.assertAlmostEqual(float(jnp.sum(jnp.abs(arm_length_exp - save_arr))), 0.0)
 
     def test_arm_length_exp_ligo(self):

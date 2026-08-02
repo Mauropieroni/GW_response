@@ -4,7 +4,7 @@ import gw_response as gwr
 import os
 import numpy as np
 
-TEST_DATA_PATH = os.path.join(os.path.dirname(__file__), "test_data/")
+TEST_DATA_PATH = os.path.join(os.path.dirname(__file__), "test_data_lisa/")
 
 
 class TestTDI(unittest.TestCase):

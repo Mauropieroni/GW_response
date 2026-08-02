@@ -4,6 +4,7 @@ import gw_response as gwr
 import os
 import numpy as np
 from gw_response.ground_based.ligo import _SITE_GEOMETRIES
+from gw_response.ground_based.datastream import detector_output
 
 TEST_DATA_PATH = os.path.join(os.path.dirname(__file__), "test_data_ligo/")
 LIGOHAN_ARM1 = _SITE_GEOMETRIES["Hanford"]["arm1"]
@@ -41,7 +42,19 @@ class TestLIGO(unittest.TestCase):
             0.0,
         )
 
-    def test_lisa_class(self):
+    def test_ligo_detector_output(self):
+        # LIGO's Michelson-combination mixing matrix, the analog of LISA's
+        # tdi_*_matrix functions (see test_tdi.py::test_TDI_matrices).
+        ligo = gwr.LIGO()
+        freqs = jnp.logspace(1, 5, 1000)
+        mix_matrix = detector_output(
+            arms_matrix_rescaled=ligo.detector_arms(0.0) / ligo.armlength,
+            x_vector=ligo.x(freqs),
+        )
+        save_arr = np.load(TEST_DATA_PATH + "detector_output.npy")
+        self.assertAlmostEqual(float(jnp.sum(jnp.abs(mix_matrix - save_arr))), 0.0)
+
+    def test_ligo_class(self):
         ligo = gwr.LIGO()
         frequencies = ligo.frequency_vec(10)
         save_arr = np.load(TEST_DATA_PATH + "frequencies.npy")
