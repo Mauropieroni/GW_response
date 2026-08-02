@@ -5,209 +5,14 @@ from jax.typing import ArrayLike
 
 # Local imports
 from gw_response.utils import arm_length_exponential
+from gw_response.polarization import (
+    unit_vec,
+    polarization_tensors_PC_angles,
+    polarization_tensors_LR_angles,
+)
 
 # Update jax to use 64 bit precision
 jax.config.update("jax_enable_x64", True)
-
-
-@jax.jit
-def unit_vec(theta: ArrayLike, phi: ArrayLike) -> jax.Array:
-    """
-    Computes the unit wavevector pointing from the sky towards the detector
-    for each requested sky position.
-
-    Args:
-        theta (float or ArrayLike): Colatitude(s) of the sky position(s), in
-            radians.
-        phi (float or ArrayLike): Longitude(s) of the sky position(s), in
-            radians.
-
-    Returns:
-        jax.Array: The unit wavevector(s) in Cartesian coordinates, with
-            shape (vectorial_index (3), pixels).
-    """
-    theta = jnp.atleast_1d(theta)
-    phi = jnp.atleast_1d(phi)
-
-    # The output will be vectorial index, pixels
-    return jnp.array(
-        [jnp.sin(theta) * jnp.cos(phi), jnp.sin(theta) * jnp.sin(phi), jnp.cos(theta)]
-    )
-
-
-@jax.jit
-def uv_analytical(theta: ArrayLike, phi: ArrayLike) -> tuple[jax.Array, jax.Array]:
-    """
-    Computes the two unit vectors spanning the plane transverse to the
-    propagation direction, for each requested sky position.
-
-    These vectors (u, v) form, together with the wavevector from
-    :func:`unit_vec`, an orthonormal triad used to build the gravitational
-    wave polarization basis.
-
-    Args:
-        theta (float or ArrayLike): Colatitude(s) of the sky position(s), in
-            radians.
-        phi (float or ArrayLike): Longitude(s) of the sky position(s), in
-            radians.
-
-    Returns:
-        tuple: A tuple ``(u, v)`` of jax.Array, each with shape (pixels,
-            vectorial_index (3)), giving the two transverse unit vectors for
-            every sky position.
-    """
-    theta = jnp.atleast_1d(theta)
-    phi = jnp.atleast_1d(phi)
-
-    dk_dtheta = jnp.array(
-        [
-            jnp.cos(theta) * jnp.cos(phi),
-            jnp.cos(theta) * jnp.sin(phi),
-            -jnp.sin(theta),
-        ]
-    ).T
-    dk_dphi = jnp.array([jnp.sin(phi), -jnp.cos(phi), 0.0 * phi]).T
-
-    # The output will be pixels, vectorial index
-    return dk_dtheta, dk_dphi
-
-
-@jax.jit
-def polarization_vectors(u: jax.Array, v: jax.Array) -> tuple[jax.Array, jax.Array]:
-    """
-    Builds the complex left/right circular polarization vectors from the two
-    transverse unit vectors.
-
-    Args:
-        u (jax.Array): First transverse unit vector, shape (pixels,
-            vectorial_index (3)).
-        v (jax.Array): Second transverse unit vector, shape (pixels,
-            vectorial_index (3)).
-
-    Returns:
-        tuple: A tuple of two complex jax.Array, each with shape (pixels,
-        vectorial_index (3)), corresponding to the ``(u - i v) / sqrt(2)`` and
-        ``(u + i v) / sqrt(2)`` combinations.
-    """
-    # The output will be pixels, vectorial index
-    return (u - 1j * v) / jnp.sqrt(2), (u + 1j * v) / jnp.sqrt(2)
-
-
-@jax.jit
-def polarization_vectors_angles(
-    theta: ArrayLike, phi: ArrayLike
-) -> tuple[jax.Array, jax.Array]:
-    """
-    Computes the two transverse unit vectors spanning the plane perpendicular to the
-    propagation direction, given the sky position.
-
-    Args:
-        theta (float or ArrayLike): Colatitude(s) of the sky position(s), in
-            radians.
-        phi (float or ArrayLike): Longitude(s) of the sky position(s), in
-            radians.
-
-    Returns:
-        tuple: A tuple ``(u, v)`` of jax.Array, each with shape (pixels,
-            vectorial_index (3)), giving the two transverse unit vectors for
-            every sky position.
-    """
-    u, v = uv_analytical(theta, phi)
-    return polarization_vectors(u, v)
-
-
-@jax.jit
-def polarization_tensors_PC(u: jax.Array, v: jax.Array) -> tuple[jax.Array, jax.Array]:
-    """
-    Computes the plus/cross gravitational wave polarization tensors.
-
-    Args:
-        u (jax.Array): First transverse unit vector, shape (pixels,
-            vectorial_index (3)).
-        v (jax.Array): Second transverse unit vector, shape (pixels,
-            vectorial_index (3)).
-
-    Returns:
-        tuple: A tuple ``(e_plus, e_cross)`` of jax.Array, each with shape
-            (pixels, vectorial_index (3), vectorial_index (3)), giving the plus
-            and cross polarization tensors for every sky position.
-    """
-    e1p = jnp.einsum("...i,...j->...ij", u, u) - jnp.einsum("...i,...j->...ij", v, v)
-    e1c = jnp.einsum("...i,...j->...ij", u, v) + jnp.einsum("...i,...j->...ij", v, u)
-
-    # The output will be pixels, vectorial index, vectorial index
-    return e1p / jnp.sqrt(2), e1c / jnp.sqrt(2)
-
-
-@jax.jit
-def polarization_tensors_PC_angles(
-    theta: ArrayLike, phi: ArrayLike
-) -> tuple[jax.Array, jax.Array]:
-    """
-    Computes the plus/cross gravitational wave polarization tensors, given the
-    sky position.
-
-    Args:
-        theta (float or ArrayLike): Colatitude(s) of the sky position(s), in
-            radians.
-        phi (float or ArrayLike): Longitude(s) of the sky position(s), in
-            radians.
-
-    Returns:
-        tuple: A tuple ``(e_plus, e_cross)`` of jax.Array, each with shape (pixels,
-        vectorial_index (3), vectorial_index (3)), giving the plus and cross
-        polarization tensors for every sky position.
-    """
-    u, v = uv_analytical(theta, phi)
-    return polarization_tensors_PC(u, v)
-
-
-@jax.jit
-def polarization_tensors_LR(u: jax.Array, v: jax.Array) -> tuple[jax.Array, jax.Array]:
-    """
-    Computes the left/right circular gravitational wave polarization
-    tensors.
-
-    Args:
-        u (jax.Array): First transverse unit vector, shape (pixels,
-            vectorial_index (3)).
-        v (jax.Array): Second transverse unit vector, shape (pixels,
-            vectorial_index (3)).
-
-    Returns:
-        tuple: A tuple ``(e_L, e_R)`` of complex jax.Array, each with shape
-            (pixels, vectorial_index (3), vectorial_index (3)), giving the left
-            and right circular polarization tensors for every sky position.
-    """
-    first, second = polarization_vectors(u, v)
-    e1L = jnp.einsum("...i,...j->...ij", first, first)
-    e1R = jnp.einsum("...i,...j->...ij", second, second)
-
-    # The output will be pixels, vectorial index, vectorial index
-    return e1L, e1R
-
-
-@jax.jit
-def polarization_tensors_LR_angles(
-    theta: ArrayLike, phi: ArrayLike
-) -> tuple[jax.Array, jax.Array]:
-    """
-    Computes the left/right circular gravitational wave polarization tensors,
-    given the sky position.
-
-    Args:
-        theta (float or ArrayLike): Colatitude(s) of the sky position(s), in
-            radians.
-        phi (float or ArrayLike): Longitude(s) of the sky position(s), in
-            radians.
-
-    Returns:
-        tuple: A tuple ``(e_L, e_R)`` of complex jax.Array, each with shape
-            (pixels, vectorial_index (3), vectorial_index (3)), giving the left
-            and right circular polarization tensors for every sky position.
-    """
-    u, v = uv_analytical(theta, phi)
-    return polarization_tensors_LR(u, v)
 
 
 @jax.jit
@@ -224,8 +29,8 @@ def geometrical_factor(
             the arm length, with shape (configurations, vectorial_index (3),
             arms (6)).
         polarization_tensor (jax.Array): Polarization tensor(s) as returned
-            by e.g. :func:`polarization_tensors_LR`, with shape (pixels,
-            vectorial_index (3), vectorial_index (3)).
+            by e.g. :func:`gw_response.polarization.polarization_tensors_LR`,
+            with shape (pixels, vectorial_index (3), vectorial_index (3)).
 
     Returns:
         jax.Array: The geometrical factor, with shape (configurations, arms,
@@ -622,8 +427,8 @@ def get_single_link_response(
     Args:
         polarization_tensor (jax.Array): Polarization tensor, with shape (pixels,
             vectorial_index (3), vectorial_index (3)), e.g. one of the tensors
-            returned by :func:`polarization_tensors_LR` or
-            :func:`polarization_tensors_PC`.
+            returned by :func:`gw_response.polarization.polarization_tensors_LR` or
+            :func:`gw_response.polarization.polarization_tensors_PC`.
         arms_matrix_rescaled (jax.Array): Detector arm vectors rescaled by
             the arm length, with shape (configurations, vectorial_index (3), arms (6)).
         wavevector (jax.Array): Unit wavevector(s), with shape (vectorial_index (3),
@@ -646,96 +451,3 @@ def get_single_link_response(
     return single_link_response(
         positions_rescaled, arms_matrix_rescaled, wavevector, x_vector, xi_k_vec
     )
-
-
-@jax.jit
-def get_single_link_response_retarded(
-    polarization_tensor: jax.Array,
-    arm_vector_retarded_rescaled: jax.Array,
-    ltt_rescaled: jax.Array,
-    wavevector: jax.Array,
-    x_vector: jax.Array,
-    receiver_positions_rescaled: jax.Array,
-) -> jax.Array:
-    """
-    Single-link strain response for a genuinely asymmetric arm (``12 !=
-    21``): the emitter's position is taken at its own light-travel-time-
-    retarded instant rather than simultaneously with the receiver, so the
-    arm vector -- and this transfer function -- differs by propagation
-    direction. :func:`get_single_link_response` assumes one shared,
-    simultaneous geometry for a truly static arm; this is its exact
-    counterpart for a moving one.
-
-    The distinction that matters here is between two different lengths:
-    `ltt_rescaled` is the (simultaneous-distance-based) light-travel-time
-    estimate that `arm_vector_retarded_rescaled`'s own emission time was
-    computed from, while ``jnp.linalg.norm(arm_vector_retarded_rescaled,
-    axis=1)`` is the *true* retarded arm length -- these differ by exactly
-    the distance the emitter moved during the transit. Conflating the two
-    into one shared "arm length" (as :func:`get_single_link_response` does,
-    fine for a static arm where they coincide) leaves a residual error that
-    does not shrink with a shorter observation window, since it is not a
-    "segment span" effect at all; keeping them separate here is what makes
-    this exact rather than merely an improved approximation.
-
-    Args:
-        polarization_tensor (jax.Array): Polarization tensor, with shape (pixels,
-            vectorial_index (3), vectorial_index (3)).
-        arm_vector_retarded_rescaled (jax.Array): Vector from the receiver's
-            current position to the emitter's position at the retarded
-            (emission) time, rescaled by the nominal arm length, with shape
-            (configurations, vectorial_index (3), arms).
-        ltt_rescaled (jax.Array): The light-travel-time estimate used to
-            find the retarded emission time, rescaled to the same
-            dimensionless units as `arm_vector_retarded_rescaled`'s
-            magnitude (i.e. light-travel-time * light_speed / nominal arm
-            length), with shape (configurations, arms).
-        wavevector (jax.Array): Unit wavevector(s), with shape
-            (vectorial_index (3), pixels).
-        x_vector (jax.Array): Vector of ``2 pi f L / c`` values over
-            frequency (`L` the nominal arm length).
-        receiver_positions_rescaled (jax.Array): Receiver's position at each
-            arm's own reception time, rescaled by the nominal arm length,
-            with shape (configurations, vectorial_index (3), arms).
-
-    Returns:
-        jax.Array: The single-link strain response, with shape
-            (configurations, x_vector, arms, pixels).
-    """
-    ltt_rescaled = jnp.asarray(ltt_rescaled)
-    arm_length_retarded_rescaled = jnp.linalg.norm(arm_vector_retarded_rescaled, axis=1)
-    unit_arm = arm_vector_retarded_rescaled / arm_length_retarded_rescaled[:, None, :]
-
-    k_dot_arm = jnp.einsum("...ij,ik->...jk", arm_vector_retarded_rescaled, wavevector)
-    comb_plus = ltt_rescaled[..., None] + k_dot_arm
-    comb_minus = ltt_rescaled[..., None] - k_dot_arm
-
-    prod_plus = jnp.einsum("i,...kl->...ikl", x_vector, comb_plus)
-    prod_minus = jnp.einsum("i,...kl->...ikl", x_vector, comb_minus)
-    xi_no_G = jnp.exp(0.5j * prod_minus) * jnp.sinc(prod_plus / 2.0 / jnp.pi)
-
-    # geometrical_factor's own arm_lengths**2 scaling is only exactly right
-    # when fed a vector whose magnitude equals ltt_rescaled -- which
-    # arm_vector_retarded_rescaled generally doesn't (that's the whole
-    # asymmetry) -- so geometrical_factor is fed a unit vector instead, and
-    # the exact scaling this formula's own retardation structure requires
-    # is applied explicitly here.
-    geometrical_unit = geometrical_factor(unit_arm, polarization_tensor)
-    length_correction = (arm_length_retarded_rescaled[..., None] * comb_plus) / (
-        ltt_rescaled[..., None] * (arm_length_retarded_rescaled[..., None] + k_dot_arm)
-    )
-    geometrical = geometrical_unit * length_correction
-
-    xi_k_A = jnp.einsum("...ijk,...jk->...ijk", xi_no_G, geometrical)
-
-    position_exp_factor = position_exponential(
-        receiver_positions_rescaled, wavevector, x_vector
-    )
-
-    t_retarded_factor = jnp.exp(
-        jnp.einsum("i,...j->...ij", -1j * x_vector, ltt_rescaled)
-    )
-    prefactor = jnp.einsum("...j,...ij->...ij", ltt_rescaled, t_retarded_factor)
-    prefactor = jnp.einsum("i,...ij->...ij", x_vector, prefactor)
-
-    return jnp.einsum("...ij,...ijk->...ijk", prefactor, position_exp_factor * xi_k_A)

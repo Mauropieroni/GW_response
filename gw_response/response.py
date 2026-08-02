@@ -10,14 +10,14 @@ from typing import Callable, TYPE_CHECKING
 from jax.typing import ArrayLike
 
 from gw_response.constants import PhysicalConstants
-from gw_response.single_link import (
+from gw_response.polarization import (
     unit_vec,
     uv_analytical,
     polarization_tensors_LR,
     polarization_tensors_PC,
-    get_single_link_response,
-    get_single_link_response_retarded,
 )
+from gw_response.single_link import get_single_link_response
+from gw_response.single_link_retarded import get_single_link_response_retarded
 from gw_response.space_based.tdi import tdi_matrix
 from gw_response.FFT_utils import (
     strain_to_frequency_domain,
@@ -1154,7 +1154,7 @@ class Response(object):
         :meth:`get_single_link_response_frozen_retarded_td`: for each of the 6
         arms, backdates the emitter's position by that arm's own
         (simultaneous-distance-based) light-travel-time estimate, giving
-        the inputs :func:`gw_response.single_link.get_single_link_response_retarded`
+        the inputs :func:`gw_response.single_link_retarded.get_single_link_response_retarded`
         needs to treat the arm as genuinely asymmetric rather than static.
 
         Returns:
@@ -1204,7 +1204,7 @@ class Response(object):
         at its own light-travel-time-retarded instant (`det.vertex_positions`
         queried at a second, arm-specific, earlier time) instead of
         simultaneously with the receiver, via
-        :func:`gw_response.single_link.get_single_link_response_retarded`.
+        :func:`gw_response.single_link_retarded.get_single_link_response_retarded`.
         Reduces to :meth:`get_single_link_response_frozen_td`'s output exactly
         whenever the arm is genuinely static (retarded and simultaneous
         emitter positions coincide). Standalone FFT-based building block

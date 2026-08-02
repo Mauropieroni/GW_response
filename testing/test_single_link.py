@@ -188,6 +188,208 @@ class TestSingleLink(unittest.TestCase):
             float(jnp.sum(jnp.abs(quadratic_response_integrated - save_arr))), 0.0
         )
 
+    def test_polarization_angles_convenience_functions(self):
+        # The "_angles" functions are convenience wrappers that build (u, v)
+        # from (theta, phi) internally, so a caller never has to touch that
+        # intermediate representation. They must match chaining the
+        # already-tested raw functions by hand.
+        pixel = gwr.Pixel()
+        theta, phi = pixel.theta_pixel, pixel.phi_pixel
+        u, v = gwr.uv_analytical(theta, phi)
+
+        e1, e2 = gwr.polarization_vectors(u, v)
+        e1_angles, e2_angles = gwr.polarization_vectors_angles(theta, phi)
+        self.assertAlmostEqual(float(jnp.sum(jnp.abs(e1_angles - e1))), 0.0)
+        self.assertAlmostEqual(float(jnp.sum(jnp.abs(e2_angles - e2))), 0.0)
+
+        e1p, e1c = gwr.polarization_tensors_PC(u, v)
+        e1p_angles, e1c_angles = gwr.polarization_tensors_PC_angles(theta, phi)
+        self.assertAlmostEqual(float(jnp.sum(jnp.abs(e1p_angles - e1p))), 0.0)
+        self.assertAlmostEqual(float(jnp.sum(jnp.abs(e1c_angles - e1c))), 0.0)
+
+        e1L, e1R = gwr.polarization_tensors_LR(u, v)
+        e1L_angles, e1R_angles = gwr.polarization_tensors_LR_angles(theta, phi)
+        self.assertAlmostEqual(float(jnp.sum(jnp.abs(e1L_angles - e1L))), 0.0)
+        self.assertAlmostEqual(float(jnp.sum(jnp.abs(e1R_angles - e1R))), 0.0)
+
+    def test_geometrical_and_xi_k_angles_convenience_functions(self):
+        lisa = gwr.LISA()
+        freqs = jnp.logspace(-5, 0, 300)
+        pixel = gwr.Pixel()
+        theta, phi = pixel.theta_pixel, pixel.phi_pixel
+        assert theta is not None and phi is not None
+        u, v = gwr.uv_analytical(theta, phi)
+        arms_matrix_rescaled = lisa.detector_arms(0.0) / lisa.armlength
+        x_vector = lisa.x(freqs)
+        wavevector = gwr.unit_vec(theta, phi)
+
+        e1p, e1c = gwr.polarization_tensors_PC(u, v)
+        G_plus = gwr.geometrical_factor(arms_matrix_rescaled, e1p)
+        G_cross = gwr.geometrical_factor(arms_matrix_rescaled, e1c)
+        G_plus_angles, G_cross_angles = gwr.geometrical_factor_PC_angles(
+            arms_matrix_rescaled, theta, phi
+        )
+        self.assertAlmostEqual(float(jnp.sum(jnp.abs(G_plus_angles - G_plus))), 0.0)
+        self.assertAlmostEqual(float(jnp.sum(jnp.abs(G_cross_angles - G_cross))), 0.0)
+
+        e1L, e1R = gwr.polarization_tensors_LR(u, v)
+        G_L = gwr.geometrical_factor(arms_matrix_rescaled, e1L)
+        G_R = gwr.geometrical_factor(arms_matrix_rescaled, e1R)
+        G_L_angles, G_R_angles = gwr.geometrical_factor_LR_angles(
+            arms_matrix_rescaled, theta, phi
+        )
+        self.assertAlmostEqual(float(jnp.sum(jnp.abs(G_L_angles - G_L))), 0.0)
+        self.assertAlmostEqual(float(jnp.sum(jnp.abs(G_R_angles - G_R))), 0.0)
+
+        xi_k_P = gwr.xi_k_A(arms_matrix_rescaled, wavevector, x_vector, G_plus)
+        xi_k_C = gwr.xi_k_A(arms_matrix_rescaled, wavevector, x_vector, G_cross)
+        xi_k_P_angles, xi_k_C_angles = gwr.xi_k_A_PC_angles(
+            arms_matrix_rescaled, theta, phi, x_vector
+        )
+        self.assertAlmostEqual(float(jnp.sum(jnp.abs(xi_k_P_angles - xi_k_P))), 0.0)
+        self.assertAlmostEqual(float(jnp.sum(jnp.abs(xi_k_C_angles - xi_k_C))), 0.0)
+
+        xi_k_L = gwr.xi_k_A(arms_matrix_rescaled, wavevector, x_vector, G_L)
+        xi_k_R = gwr.xi_k_A(arms_matrix_rescaled, wavevector, x_vector, G_R)
+        xi_k_L_angles, xi_k_R_angles = gwr.xi_k_A_LR_angles(
+            arms_matrix_rescaled, theta, phi, x_vector
+        )
+        self.assertAlmostEqual(float(jnp.sum(jnp.abs(xi_k_L_angles - xi_k_L))), 0.0)
+        self.assertAlmostEqual(float(jnp.sum(jnp.abs(xi_k_R_angles - xi_k_R))), 0.0)
+
+    def test_single_link_response_angles_convenience_functions(self):
+        lisa = gwr.LISA()
+        freqs = jnp.logspace(-5, 0, 300)
+        pixel = gwr.Pixel()
+        theta, phi = pixel.theta_pixel, pixel.phi_pixel
+        u, v = gwr.uv_analytical(theta, phi)
+        arms_matrix_rescaled = lisa.detector_arms(0.0) / lisa.armlength
+        positions_rescaled = lisa.vertex_positions(0.0) / lisa.armlength
+        x_vector = lisa.x(freqs)
+        wavevector = gwr.unit_vec(theta, phi)
+
+        e1p, e1c = gwr.polarization_tensors_PC(u, v)
+        response_P = gwr.get_single_link_response(
+            e1p, arms_matrix_rescaled, wavevector, x_vector, positions_rescaled
+        )
+        response_C = gwr.get_single_link_response(
+            e1c, arms_matrix_rescaled, wavevector, x_vector, positions_rescaled
+        )
+        response_P_angles, response_C_angles = gwr.single_link_response_PC_angles(
+            positions_rescaled, arms_matrix_rescaled, theta, phi, x_vector
+        )
+        self.assertAlmostEqual(
+            float(jnp.sum(jnp.abs(response_P_angles - response_P))), 0.0
+        )
+        self.assertAlmostEqual(
+            float(jnp.sum(jnp.abs(response_C_angles - response_C))), 0.0
+        )
+
+        e1L, e1R = gwr.polarization_tensors_LR(u, v)
+        response_L = gwr.get_single_link_response(
+            e1L, arms_matrix_rescaled, wavevector, x_vector, positions_rescaled
+        )
+        response_R = gwr.get_single_link_response(
+            e1R, arms_matrix_rescaled, wavevector, x_vector, positions_rescaled
+        )
+        response_L_angles, response_R_angles = gwr.single_link_response_LR_angles(
+            positions_rescaled, arms_matrix_rescaled, theta, phi, x_vector
+        )
+        self.assertAlmostEqual(
+            float(jnp.sum(jnp.abs(response_L_angles - response_L))), 0.0
+        )
+        self.assertAlmostEqual(
+            float(jnp.sum(jnp.abs(response_R_angles - response_R))), 0.0
+        )
+
+    def test_get_single_link_response_retarded_angles(self):
+        # Same "_angles" convenience pattern, for the retarded (genuinely
+        # asymmetric arm) single-link response used by
+        # Response.get_single_link_response_frozen_retarded_td.
+        lisa = gwr.LISA()
+        freqs = jnp.logspace(-5, 0, 300)
+        pixel = gwr.Pixel()
+        assert pixel.theta_pixel is not None and pixel.phi_pixel is not None
+        theta, phi = pixel.theta_pixel[:5], pixel.phi_pixel[:5]
+        u, v = gwr.uv_analytical(theta, phi)
+        x_vector = lisa.x(freqs)
+        wavevector = gwr.unit_vec(theta, phi)
+
+        arm_vector_retarded, ltt, receiver_position = (
+            lisa.response._per_arm_retarded_geometry(lisa, 0.0)
+        )
+        arm_vector_retarded_rescaled = arm_vector_retarded[None] / lisa.armlength
+        ltt_rescaled = ltt[None] * lisa.ps.light_speed / lisa.armlength
+        receiver_positions_rescaled = receiver_position[None] / lisa.armlength
+
+        e1p, e1c = gwr.polarization_tensors_PC(u, v)
+        response_P = gwr.get_single_link_response_retarded(
+            e1p,
+            arm_vector_retarded_rescaled,
+            ltt_rescaled,
+            wavevector,
+            x_vector,
+            receiver_positions_rescaled,
+        )
+        response_C = gwr.get_single_link_response_retarded(
+            e1c,
+            arm_vector_retarded_rescaled,
+            ltt_rescaled,
+            wavevector,
+            x_vector,
+            receiver_positions_rescaled,
+        )
+        response_P_angles, response_C_angles = (
+            gwr.get_single_link_response_retarded_PC_angles(
+                arm_vector_retarded_rescaled,
+                ltt_rescaled,
+                theta,
+                phi,
+                x_vector,
+                receiver_positions_rescaled,
+            )
+        )
+        self.assertAlmostEqual(
+            float(jnp.sum(jnp.abs(response_P_angles - response_P))), 0.0
+        )
+        self.assertAlmostEqual(
+            float(jnp.sum(jnp.abs(response_C_angles - response_C))), 0.0
+        )
+
+        e1L, e1R = gwr.polarization_tensors_LR(u, v)
+        response_L = gwr.get_single_link_response_retarded(
+            e1L,
+            arm_vector_retarded_rescaled,
+            ltt_rescaled,
+            wavevector,
+            x_vector,
+            receiver_positions_rescaled,
+        )
+        response_R = gwr.get_single_link_response_retarded(
+            e1R,
+            arm_vector_retarded_rescaled,
+            ltt_rescaled,
+            wavevector,
+            x_vector,
+            receiver_positions_rescaled,
+        )
+        response_L_angles, response_R_angles = (
+            gwr.get_single_link_response_retarded_LR_angles(
+                arm_vector_retarded_rescaled,
+                ltt_rescaled,
+                theta,
+                phi,
+                x_vector,
+                receiver_positions_rescaled,
+            )
+        )
+        self.assertAlmostEqual(
+            float(jnp.sum(jnp.abs(response_L_angles - response_L))), 0.0
+        )
+        self.assertAlmostEqual(
+            float(jnp.sum(jnp.abs(response_R_angles - response_R))), 0.0
+        )
+
 
 class TestSingleLink_ligo(unittest.TestCase):
     def test_xi_k(self):

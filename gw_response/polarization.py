@@ -1,0 +1,207 @@
+# Global imports
+import jax
+import jax.numpy as jnp
+from jax.typing import ArrayLike
+
+# Update jax to use 64 bit precision
+jax.config.update("jax_enable_x64", True)
+
+
+@jax.jit
+def unit_vec(theta: ArrayLike, phi: ArrayLike) -> jax.Array:
+    """
+    Computes the unit wavevector pointing from the sky towards the detector
+    for each requested sky position.
+
+    Args:
+        theta (float or ArrayLike): Colatitude(s) of the sky position(s), in
+            radians.
+        phi (float or ArrayLike): Longitude(s) of the sky position(s), in
+            radians.
+
+    Returns:
+        jax.Array: The unit wavevector(s) in Cartesian coordinates, with
+            shape (vectorial_index (3), pixels).
+    """
+    theta = jnp.atleast_1d(theta)
+    phi = jnp.atleast_1d(phi)
+
+    # The output will be vectorial index, pixels
+    return jnp.array(
+        [jnp.sin(theta) * jnp.cos(phi), jnp.sin(theta) * jnp.sin(phi), jnp.cos(theta)]
+    )
+
+
+@jax.jit
+def uv_analytical(theta: ArrayLike, phi: ArrayLike) -> tuple[jax.Array, jax.Array]:
+    """
+    Computes the two unit vectors spanning the plane transverse to the
+    propagation direction, for each requested sky position.
+
+    These vectors (u, v) form, together with the wavevector from
+    :func:`unit_vec`, an orthonormal triad used to build the gravitational
+    wave polarization basis.
+
+    Args:
+        theta (float or ArrayLike): Colatitude(s) of the sky position(s), in
+            radians.
+        phi (float or ArrayLike): Longitude(s) of the sky position(s), in
+            radians.
+
+    Returns:
+        tuple: A tuple ``(u, v)`` of jax.Array, each with shape (pixels,
+            vectorial_index (3)), giving the two transverse unit vectors for
+            every sky position.
+    """
+    theta = jnp.atleast_1d(theta)
+    phi = jnp.atleast_1d(phi)
+
+    dk_dtheta = jnp.array(
+        [
+            jnp.cos(theta) * jnp.cos(phi),
+            jnp.cos(theta) * jnp.sin(phi),
+            -jnp.sin(theta),
+        ]
+    ).T
+    dk_dphi = jnp.array([jnp.sin(phi), -jnp.cos(phi), 0.0 * phi]).T
+
+    # The output will be pixels, vectorial index
+    return dk_dtheta, dk_dphi
+
+
+@jax.jit
+def polarization_vectors(u: jax.Array, v: jax.Array) -> tuple[jax.Array, jax.Array]:
+    """
+    Builds the complex left/right circular polarization vectors from the two
+    transverse unit vectors.
+
+    Args:
+        u (jax.Array): First transverse unit vector, shape (pixels,
+            vectorial_index (3)).
+        v (jax.Array): Second transverse unit vector, shape (pixels,
+            vectorial_index (3)).
+
+    Returns:
+        tuple: A tuple of two complex jax.Array, each with shape (pixels,
+        vectorial_index (3)), corresponding to the ``(u - i v) / sqrt(2)`` and
+        ``(u + i v) / sqrt(2)`` combinations.
+    """
+    # The output will be pixels, vectorial index
+    return (u - 1j * v) / jnp.sqrt(2), (u + 1j * v) / jnp.sqrt(2)
+
+
+@jax.jit
+def polarization_vectors_angles(
+    theta: ArrayLike, phi: ArrayLike
+) -> tuple[jax.Array, jax.Array]:
+    """
+    Computes the two transverse unit vectors spanning the plane perpendicular to the
+    propagation direction, given the sky position.
+
+    Args:
+        theta (float or ArrayLike): Colatitude(s) of the sky position(s), in
+            radians.
+        phi (float or ArrayLike): Longitude(s) of the sky position(s), in
+            radians.
+
+    Returns:
+        tuple: A tuple ``(u, v)`` of jax.Array, each with shape (pixels,
+            vectorial_index (3)), giving the two transverse unit vectors for
+            every sky position.
+    """
+    u, v = uv_analytical(theta, phi)
+    return polarization_vectors(u, v)
+
+
+@jax.jit
+def polarization_tensors_PC(u: jax.Array, v: jax.Array) -> tuple[jax.Array, jax.Array]:
+    """
+    Computes the plus/cross gravitational wave polarization tensors.
+
+    Args:
+        u (jax.Array): First transverse unit vector, shape (pixels,
+            vectorial_index (3)).
+        v (jax.Array): Second transverse unit vector, shape (pixels,
+            vectorial_index (3)).
+
+    Returns:
+        tuple: A tuple ``(e_plus, e_cross)`` of jax.Array, each with shape
+            (pixels, vectorial_index (3), vectorial_index (3)), giving the plus
+            and cross polarization tensors for every sky position.
+    """
+    e1p = jnp.einsum("...i,...j->...ij", u, u) - jnp.einsum("...i,...j->...ij", v, v)
+    e1c = jnp.einsum("...i,...j->...ij", u, v) + jnp.einsum("...i,...j->...ij", v, u)
+
+    # The output will be pixels, vectorial index, vectorial index
+    return e1p / jnp.sqrt(2), e1c / jnp.sqrt(2)
+
+
+@jax.jit
+def polarization_tensors_PC_angles(
+    theta: ArrayLike, phi: ArrayLike
+) -> tuple[jax.Array, jax.Array]:
+    """
+    Computes the plus/cross gravitational wave polarization tensors, given the
+    sky position.
+
+    Args:
+        theta (float or ArrayLike): Colatitude(s) of the sky position(s), in
+            radians.
+        phi (float or ArrayLike): Longitude(s) of the sky position(s), in
+            radians.
+
+    Returns:
+        tuple: A tuple ``(e_plus, e_cross)`` of jax.Array, each with shape (pixels,
+        vectorial_index (3), vectorial_index (3)), giving the plus and cross
+        polarization tensors for every sky position.
+    """
+    u, v = uv_analytical(theta, phi)
+    return polarization_tensors_PC(u, v)
+
+
+@jax.jit
+def polarization_tensors_LR(u: jax.Array, v: jax.Array) -> tuple[jax.Array, jax.Array]:
+    """
+    Computes the left/right circular gravitational wave polarization
+    tensors.
+
+    Args:
+        u (jax.Array): First transverse unit vector, shape (pixels,
+            vectorial_index (3)).
+        v (jax.Array): Second transverse unit vector, shape (pixels,
+            vectorial_index (3)).
+
+    Returns:
+        tuple: A tuple ``(e_L, e_R)`` of complex jax.Array, each with shape
+            (pixels, vectorial_index (3), vectorial_index (3)), giving the left
+            and right circular polarization tensors for every sky position.
+    """
+    first, second = polarization_vectors(u, v)
+    e1L = jnp.einsum("...i,...j->...ij", first, first)
+    e1R = jnp.einsum("...i,...j->...ij", second, second)
+
+    # The output will be pixels, vectorial index, vectorial index
+    return e1L, e1R
+
+
+@jax.jit
+def polarization_tensors_LR_angles(
+    theta: ArrayLike, phi: ArrayLike
+) -> tuple[jax.Array, jax.Array]:
+    """
+    Computes the left/right circular gravitational wave polarization tensors,
+    given the sky position.
+
+    Args:
+        theta (float or ArrayLike): Colatitude(s) of the sky position(s), in
+            radians.
+        phi (float or ArrayLike): Longitude(s) of the sky position(s), in
+            radians.
+
+    Returns:
+        tuple: A tuple ``(e_L, e_R)`` of complex jax.Array, each with shape
+            (pixels, vectorial_index (3), vectorial_index (3)), giving the left
+            and right circular polarization tensors for every sky position.
+    """
+    u, v = uv_analytical(theta, phi)
+    return polarization_tensors_LR(u, v)

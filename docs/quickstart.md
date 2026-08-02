@@ -62,7 +62,9 @@ notebook for a full, worked walk-through.
 | `constants.py` | `PhysicalConstants`, basis transformations |
 | `detector.py` | Abstract `Detector` base class |
 | `lisa.py` | `LISA` detector: rigid, Keplerian, and numerical orbits and arm vectors |
-| `single_link.py` | Single-link response, polarization tensors |
+| `polarization.py` | Sky-position wavevector, transverse basis, plus/cross and left/right polarization tensors |
+| `single_link.py` | Single-link response for a static (simultaneous-geometry) arm |
+| `single_link_retarded.py` | Single-link response for a genuinely asymmetric (retarded) arm |
 | `tdi.py` | Time-delay interferometry combinations (`XYZ`, `AET`, Sagnac, …) |
 | `response.py` | `Response`: linear & quadratic response driver |
 | `noise.py` | `Noise`: test-mass and OMS noise in the TDI basis |
