@@ -390,7 +390,7 @@ def build_tdi(
     """
     Projects a single-link response onto the requested TDI combination.
 
-    This mirrors :func:`gw_response.response.linear_response_angular`,
+    This mirrors :func:`gw_response.response_utils.linear_response_angular`,
     exposed here for convenience when only TDI-related quantities are
     needed.
 

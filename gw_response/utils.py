@@ -17,9 +17,9 @@ jax.config.update("jax_enable_x64", True)
 
 def as_time_array(time_in_years: ArrayLike) -> jax.Array:
     """
-    Wraps a bare scalar `time_in_years` (a Python int/float, or a 0-d array)
-    into a length-1 jnp array so that downstream functions can always assume
-    an array-like of times.
+    Wraps a bare scalar `time_in_years` (a Python int/float, or a 0-d array) into a
+    length-1 jnp array so that downstream functions can always assume an array-like of
+    times.
 
     Args:
         time_in_years (ArrayLike): A scalar or array of time(s), in years.
@@ -37,22 +37,19 @@ def as_time_array(time_in_years: ArrayLike) -> jax.Array:
 @chex.dataclass
 class Pixel:
     """
-    A data class for handling the pixelization of the sky in astronomical
-    observations.
+    A data class for handling the pixelization of the sky in astronomical observations.
 
     Attributes:
-        NSIDE (int): The number of sides of each pixel in the HEALPix
-            pixelization. Default is 8.
+        NSIDE (int): The number of sides of each pixel in the HEALPix pixelization.
+            Default is 8.
         NPIX (int): The total number of pixels, computed based on NSIDE.
-        angular_map (jax.Array): An array representing the angular position
-            of each pixel.
-        theta_pixel (jax.Array): An array of theta (colatitude) values for
-            each pixel.
-        phi_pixel (jax.Array): An array of phi (longitude) values for each
+        angular_map (jax.Array): An array representing the angular position of each
             pixel.
+        theta_pixel (jax.Array): An array of theta (colatitude) values for each pixel.
+        phi_pixel (jax.Array): An array of phi (longitude) values for each pixel.
 
-    The class automatically computes the pixelization upon instantiation or when
-    the NSIDE value is changed.
+    The class automatically computes the pixelization upon instantiation or when the
+    NSIDE value is changed.
     """
 
     NSIDE: int = 8
@@ -65,9 +62,9 @@ class Pixel:
         """
         Post-initialization method to compute the pixelization of the sky.
 
-        This method is automatically called after the class initialization. It
-        computes the total number of pixels (NPIX), the angular map, and the
-        theta and phi values for each pixel based on the NSIDE value.
+        This method is automatically called after the class initialization. It computes
+        the total number of pixels (NPIX), the angular map, and the theta and phi values
+        for each pixel based on the NSIDE value.
         """
         (
             self.NPIX,
@@ -81,11 +78,10 @@ class Pixel:
         Computes the pixelization parameters of the sky.
 
         Returns:
-            tuple: A tuple containing:
-                - NPIX (int): The total number of pixels.
-                - angular_map (jax.Array): The angular map array.
-                - theta_pixel (jax.Array): The theta values for each pixel.
-                - phi_pixel (jax.Array): The phi values for each pixel.
+            tuple: A tuple containing: - NPIX (int): The total number of pixels. -
+                angular_map (jax.Array): The angular map array. - theta_pixel
+                (jax.Array): The theta values for each pixel. - phi_pixel (jax.Array):
+                The phi values for each pixel.
         """
         NPIX = hp.nside2npix(self.NSIDE)
         theta_pixel, phi_pixel = hp.pix2ang(self.NSIDE, jnp.arange(NPIX))
@@ -101,8 +97,8 @@ class Pixel:
         Args:
             NSIDE (int): The new NSIDE value for pixelization.
 
-        This method updates the NSIDE attribute and recomputes the NPIX,
-        angular_map, theta_pixel, and phi_pixel attributes.
+        This method updates the NSIDE attribute and recomputes the NPIX, angular_map,
+        theta_pixel, and phi_pixel attributes.
         """
         self.NSIDE = NSIDE
         (
@@ -114,35 +110,65 @@ class Pixel:
 
 
 @jax.jit
+def arm_lengths_from_matrix(arms_matrix_rescaled: ArrayLike) -> jax.Array:
+    """
+    Per-arm lengths from the arm matrix.
+
+    Args:
+        arms_matrix_rescaled (ArrayLike): Detector arm vectors, with shape
+            (configurations, vectorial_index (3), arms).
+
+    Returns:
+        jax.Array: The per-arm lengths, with shape (configurations, arms).
+    """
+    return jnp.sqrt(
+        jnp.einsum("...ij,...ij->...j", arms_matrix_rescaled, arms_matrix_rescaled)
+    )
+
+
+@jax.jit
+def delay_factor(length: ArrayLike, x_vector: ArrayLike) -> jax.Array:
+    """
+    Frequency-domain delay operator ``exp(-i * x * length)`` for each (length, x_vector)
+    pair -- shared by :func:`arm_length_exponential` (`length` the per-arm length) and
+    :func:`gw_response.single_link_retarded.single_link_response_retarded` (`length` the
+    light-travel-time, in the same dimensionless units).
+
+    Args:
+        length (ArrayLike): Length(s), with shape (..., arms).
+        x_vector (ArrayLike): Vector of ``2 pi f L / c`` values over frequency.
+
+    Returns:
+        jax.Array: The delay factor, with shape (..., x_vector, arms).
+    """
+    return jnp.exp(jnp.einsum("i,...j->...ij", -1j * jnp.asarray(x_vector), length))
+
+
+@jax.jit
 def arm_length_exponential(
     arms_matrix_rescaled: ArrayLike, x_vector: ArrayLike
 ) -> jax.Array:
     """
     Compute the exponential factor for the Time Delay Interferometry (TDI).
 
-    The function calculates the exponential factors used in TDI computations for
-    a laser interferometer space antenna (LISA) setup. It is part of the process
-    of accounting for the time delay in the arms of the interferometer due to
-    the finite speed of light.
+    The function calculates the exponential factors used in TDI computations for a laser
+    interferometer space antenna (LISA) setup. It is part of the process of accounting
+    for the time delay in the arms of the interferometer due to the finite speed of
+    light.
 
     Args:
-        arms_matrix_rescaled (ArrayLike): Rescaled arm matrices of the
-            interferometer, with shape (configurations, vectorial_index (3),
-            arms (6)). Ordering: [12, 23, 31, 21, 32, 13].
-        x_vector (ArrayLike): Vector of the x values over frequency, specific
-            to the LISA interferometer's configuration and operational
-            characteristics.
+        arms_matrix_rescaled (ArrayLike): Rescaled arm matrices of the interferometer,
+            with shape (configurations, vectorial_index (3), arms (6)). Ordering: [12,
+            23, 31, 21, 32, 13].
+        x_vector (ArrayLike): Vector of the x values over frequency, specific to the
+            LISA interferometer's configuration and operational characteristics.
 
     Returns:
-        jax.Array: A complex-valued 3D array representing the exponential
-            factors, with shape [configurations, x_vector, arms]. These
-            factors are used in further calculations of the TDI response.
+        jax.Array: A complex-valued 3D array representing the exponential factors, with
+            shape [configurations, x_vector, arms]. These factors are used in further
+            calculations of the TDI response.
     """
-    arm_lengths = jnp.sqrt(
-        jnp.einsum("...ij,...ij->...j", arms_matrix_rescaled, arms_matrix_rescaled)
-    )
-    xij = jnp.einsum("i,...j->...ij", -1j * x_vector, arm_lengths)
-    return jnp.exp(xij)
+    return delay_factor(arm_lengths_from_matrix(arms_matrix_rescaled), x_vector)
 
 
 @jax.jit
@@ -153,15 +179,14 @@ def combine_single_link(
     Applies a detector's channel-combination matrix to per-link responses.
 
     Args:
-        combination_matrix (ArrayLike): Mixing matrix turning per-link
-            responses into readout channels, with shape (..., x_vector,
-            channels, arms).
-        single_link (ArrayLike): Per-link response, with shape (...,
-            x_vector, arms, pixels).
+        combination_matrix (ArrayLike): Mixing matrix turning per-link responses into
+            readout channels, with shape (..., x_vector, channels, arms).
+        single_link (ArrayLike): Per-link response, with shape (..., x_vector, arms,
+            pixels).
 
     Returns:
-        jax.Array: The per-channel response, with shape (..., x_vector,
-            channels, pixels).
+        jax.Array: The per-channel response, with shape (..., x_vector, channels,
+            pixels).
     """
     return jnp.einsum("...ijk,...ikl->...ijl", combination_matrix, single_link)
 
@@ -176,15 +201,14 @@ def project_noise_matrix(
     combination_matrix^H``.
 
     Args:
-        combination_matrix (ArrayLike): Mixing matrix turning per-link
-            responses into readout channels, with shape (..., x_vector,
-            channels, arms).
-        single_link_noise (ArrayLike): Per-link noise covariance, with shape
-            (..., x_vector, arms, arms).
+        combination_matrix (ArrayLike): Mixing matrix turning per-link responses into
+            readout channels, with shape (..., x_vector, channels, arms).
+        single_link_noise (ArrayLike): Per-link noise covariance, with shape (...,
+            x_vector, arms, arms).
 
     Returns:
-        jax.Array: The projected noise covariance, with shape (...,
-            x_vector, channels, channels).
+        jax.Array: The projected noise covariance, with shape (..., x_vector, channels,
+            channels).
     """
     first_contraction = jnp.einsum(
         "...ijk,...ikl->...ijl", combination_matrix, single_link_noise
@@ -199,12 +223,12 @@ def shift_to_center(
     first: jax.Array, second: jax.Array, third: jax.Array
 ) -> tuple[jax.Array, jax.Array, jax.Array]:
     """
-    Adjusts the positions of three points (or vectors) so that their barycenter
-    is at the origin.
+    Adjusts the positions of three points (or vectors) so that their barycenter is at
+    the origin.
 
     This function is used in the context of astronomical computations where it's
-    necessary to centralize a system of points, such as adjusting the positions
-    of satellites or celestial bodies.
+    necessary to centralize a system of points, such as adjusting the positions of
+    satellites or celestial bodies.
 
     Args:
         first (jnp.ndarray): The coordinates of the first point or vector.
@@ -212,12 +236,11 @@ def shift_to_center(
         third (jnp.ndarray): The coordinates of the third point or vector.
 
     Returns:
-        tuple: A tuple of three jnp.ndarrays representing the adjusted
-            coordinates of the first, second, and third points (or vectors),
-            respectively.
+        tuple: A tuple of three jnp.ndarrays representing the adjusted coordinates of
+            the first, second, and third points (or vectors), respectively.
 
-    Each output array has the same shape as the input arrays, and their
-    collective barycenter is shifted to the origin.
+    Each output array has the same shape as the input arrays, and their collective
+    barycenter is shifted to the origin.
     """
     center = (first + second + third) / 3
     first_mass = first - center
@@ -232,12 +255,12 @@ def arms_matrix_from_vertex_positions(
     m1: jax.Array, m2: jax.Array, m3: jax.Array
 ) -> jax.Array:
     """
-    Builds a constellation arm matrix (the vector difference between each
-    ordered pair of vertices) from three vertices' Cartesian positions.
+    Builds a constellation arm matrix (the vector difference between each ordered pair
+    of vertices) from three vertices' Cartesian positions.
 
-    This differencing is identical regardless of which orbit model produced
-    the positions, so it is shared by the analytical, Keplerian, and
-    numerical orbit models in `gw_response.space_based.orbits`.
+    This differencing is identical regardless of which orbit model produced the
+    positions, so it is shared by the analytical, Keplerian, and numerical orbit models
+    in `gw_response.space_based.orbits`.
 
     Args:
         m1 (jax.Array): The Cartesian position of vertex 1.
@@ -245,10 +268,9 @@ def arms_matrix_from_vertex_positions(
         m3 (jax.Array): The Cartesian position of vertex 3.
 
     Returns:
-        jax.Array: A numpy array representing the arm matrix of the
-            constellation. Each row of the array corresponds to the vector
-            difference between pairs of vertices, ordered [12, 23, 31, 21,
-            32, 13].
+        jax.Array: A numpy array representing the arm matrix of the constellation. Each
+            row of the array corresponds to the vector difference between pairs of
+            vertices, ordered [12, 23, 31, 21, 32, 13].
     """
     return jnp.array(
         [
@@ -266,18 +288,18 @@ def _load_numerical_orbits_text(orbit_file: str) -> tuple[jax.Array, jax.Array]:
     """
     Loads numerical satellite orbit data from a plain-text file.
 
-    The file is expected to be readable by `numpy.loadtxt` and to contain 10
-    columns: time_in_years, x1, y1, z1, x2, y2, z2, x3, y3, z3, where
-    (xi, yi, zi) are the coordinates (in meters) of satellite i at the given
-    time. One row per time sample, with rows sorted by increasing time.
+    The file is expected to be readable by `numpy.loadtxt` and to contain 10 columns:
+    time_in_years, x1, y1, z1, x2, y2, z2, x3, y3, z3, where (xi, yi, zi) are the
+    coordinates (in meters) of satellite i at the given time. One row per time sample,
+    with rows sorted by increasing time.
 
     Args:
         orbit_file (str): Path to the plain-text numerical orbit data file.
 
     Returns:
-        tuple: (time_grid, positions_grid), where time_grid has shape
-            (samples,) in years and positions_grid has shape
-            (samples, 3, 3), indexed as [time, satellite, coordinate].
+        tuple: (time_grid, positions_grid), where time_grid has shape (samples,) in
+            years and positions_grid has shape (samples, 3, 3), indexed as [time,
+            satellite, coordinate].
     """
     data = np.atleast_2d(np.loadtxt(orbit_file))
     if data.shape[1] != 10:
@@ -293,23 +315,22 @@ def _load_numerical_orbits_text(orbit_file: str) -> tuple[jax.Array, jax.Array]:
 
 def _load_numerical_orbits_lisaorbits(orbit_file: str) -> tuple[jax.Array, jax.Array]:
     """
-    Loads numerical satellite orbit data from an HDF5 orbit file produced by
-    the `lisaorbits` package (https://pypi.org/project/lisaorbits/).
+    Loads numerical satellite orbit data from an HDF5 orbit file produced by the
+    `lisaorbits` package (https://pypi.org/project/lisaorbits/).
 
-    Only the spacecraft positions (dataset `tcb/x`, shape (size, 3, 3) for
-    (time, satellite, xyz), in meters) and the TCB time grid (attributes
-    `t0` and `dt`, both in seconds, and `size`) are used; velocities,
-    accelerations, light travel times, and pseudoranges are ignored. The
-    time grid is converted from seconds to years to match this module's
-    convention.
+    Only the spacecraft positions (dataset `tcb/x`, shape (size, 3, 3) for (time,
+    satellite, xyz), in meters) and the TCB time grid (attributes `t0` and `dt`, both in
+    seconds, and `size`) are used; velocities, accelerations, light travel times, and
+    pseudoranges are ignored. The time grid is converted from seconds to years to match
+    this module's convention.
 
     Args:
         orbit_file (str): Path to the HDF5 orbit file.
 
     Returns:
-        tuple: (time_grid, positions_grid), where time_grid has shape
-            (samples,) in years and positions_grid has shape
-            (samples, 3, 3), indexed as [time, satellite, coordinate].
+        tuple: (time_grid, positions_grid), where time_grid has shape (samples,) in
+            years and positions_grid has shape (samples, 3, 3), indexed as [time,
+            satellite, coordinate].
     """
     with h5py.File(orbit_file, "r") as hdf5:
         version = str(hdf5.attrs["version"])
@@ -335,30 +356,28 @@ def load_numerical_orbits(
     Loads numerical satellite orbit data from an external file and builds an
     interpolator for the satellite positions.
 
-    Two file formats are supported, auto-detected from the file content:
-      - Plain-text files readable by `numpy.loadtxt`, with 10 columns:
-        time_in_years, x1, y1, z1, x2, y2, z2, x3, y3, z3. See
-        `_load_numerical_orbits_text`.
-      - HDF5 orbit files produced by the `lisaorbits` package
-        (https://pypi.org/project/lisaorbits/), format version >= 2.0. See
-        `_load_numerical_orbits_lisaorbits`.
+    Two file formats are supported, auto-detected from the file content: - Plain-text
+    files readable by `numpy.loadtxt`, with 10 columns: time_in_years, x1, y1, z1, x2,
+    y2, z2, x3, y3, z3. See `_load_numerical_orbits_text`. - HDF5 orbit files produced
+    by the `lisaorbits` package (https://pypi.org/project/lisaorbits/), format version
+    >= 2.0. See `_load_numerical_orbits_lisaorbits`.
 
-    The interpolation coefficients are computed once here (similar in spirit
-    to `scipy.interpolate.interp1d`), so evaluating the returned interpolator
-    at query times - even repeatedly inside a jit/vmap - only needs to
-    evaluate the precomputed spline rather than re-deriving it.
+    The interpolation coefficients are computed once here (similar in spirit to
+    `scipy.interpolate.interp1d`), so evaluating the returned interpolator at query
+    times - even repeatedly inside a jit/vmap - only needs to evaluate the precomputed
+    spline rather than re-deriving it.
 
     Args:
         orbit_file (str): Path to the numerical orbit data file.
-        interpolation_method (str, optional): The interpolation method
-            passed to `interpax.Interpolator1D`, e.g. 'linear', 'nearest',
-            'cubic', 'cubic2', 'cardinal', 'catmull-rom', 'monotonic',
-            'monotonic-0', or 'akima'. Default is 'linear'.
+        interpolation_method (str, optional): The interpolation method passed to
+            `interpax.Interpolator1D`, e.g. 'linear', 'nearest', 'cubic', 'cubic2',
+            'cardinal', 'catmull-rom', 'monotonic', 'monotonic-0', or 'akima'. Default
+            is 'linear'.
 
     Returns:
-        interpax.Interpolator1D: An interpolator mapping time (in years) to
-            satellite positions. Calling it with query time(s) returns an
-            array of shape (..., 3, 3), indexed as [satellite, coordinate].
+        interpax.Interpolator1D: An interpolator mapping time (in years) to satellite
+            positions. Calling it with query time(s) returns an array of shape (..., 3,
+            3), indexed as [satellite, coordinate].
     """
     if h5py.is_hdf5(orbit_file):
         time_grid, positions_grid = _load_numerical_orbits_lisaorbits(orbit_file)

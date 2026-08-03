@@ -1,8 +1,11 @@
+import os
 import unittest
 import jax
 import jax.numpy as jnp
 import numpy as np
 import gw_response as gwr
+
+TEST_DATA_PATH_lisa = os.path.join(os.path.dirname(__file__), "test_data_lisa/")
 
 
 class TestTimeDomainRoundTrip(unittest.TestCase):
@@ -63,17 +66,21 @@ class TestTimeDomainResponseFrozen_LIGO(unittest.TestCase):
 
         dt = 1.0 / (4 * ligo.fmax)
         n = 4096
-        t = jnp.arange(n) * dt
-        h_plus = jnp.sin(2 * jnp.pi * 100.0 * t)
-        h_cross = jnp.zeros(n)
-
-        d_t = response.get_response_frozen_td(
-            ligo, 0.0, theta, phi, h_plus, h_cross, dt
+        response.waveform = gwr.Waveform(
+            strain_td=lambda t, params: (
+                jnp.sin(2 * jnp.pi * 100.0 * t) + 0j,
+                jnp.zeros_like(t) + 0j,
+            )
         )
-        self.assertEqual(d_t.shape, (1, 1, n))
+
+        d_t = response.get_response_frozen_td(ligo, 0.0, theta, phi, None, n, dt)
+        self.assertEqual(d_t.shape, (n, 1, 1))
         self.assertTrue(bool(jnp.all(jnp.isfinite(d_t))))
 
         # Manual cross-check via the (separately tested) linear_integrand
+        t = jnp.arange(n) * dt
+        h_plus = jnp.sin(2 * jnp.pi * 100.0 * t)
+        h_cross = jnp.zeros(n)
         freqs = jnp.fft.rfftfreq(n, d=dt)
         H_plus = gwr.strain_to_frequency_domain(h_plus, dt)
         H_cross = gwr.strain_to_frequency_domain(h_cross, dt)
@@ -85,6 +92,7 @@ class TestTimeDomainResponseFrozen_LIGO(unittest.TestCase):
         R_cross = jnp.moveaxis(linear["C"], 1, -1)
         expected_f = R_plus * H_plus + R_cross * H_cross
         expected_t = gwr.frequency_domain_to_time_domain(expected_f, n, dt)
+        expected_t = jnp.moveaxis(expected_t, -1, 0)
         self.assertAlmostEqual(float(jnp.max(jnp.abs(d_t - expected_t))), 0.0, places=8)
 
     def test_multiple_times_and_pixels(self):
@@ -99,21 +107,26 @@ class TestTimeDomainResponseFrozen_LIGO(unittest.TestCase):
 
         dt = 1.0 / (4 * ligo.fmax)
         n = 512
-        t = jnp.arange(n) * dt
-        h_plus = jnp.sin(2 * jnp.pi * 100.0 * t)
-        h_cross = jnp.zeros(n)
+        response.waveform = gwr.Waveform(
+            strain_td=lambda t, params: (
+                jnp.sin(2 * jnp.pi * 100.0 * t) + 0j,
+                jnp.zeros_like(t) + 0j,
+            )
+        )
 
         d_batched = response.get_response_frozen_td(
-            ligo, times, theta, phi, h_plus, h_cross, dt
+            ligo, times, theta, phi, None, n, dt
         )
-        self.assertEqual(d_batched.shape, (2, 3, n))
+        self.assertEqual(d_batched.shape, (n, 2, 3))
         self.assertTrue(bool(jnp.all(jnp.isfinite(d_batched))))
 
         d_single = response.get_response_frozen_td(
-            ligo, times[1:2], theta[2:3], phi[2:3], h_plus, h_cross, dt
+            ligo, times[1:2], theta[2:3], phi[2:3], None, n, dt
         )
         self.assertAlmostEqual(
-            float(jnp.max(jnp.abs(d_batched[1, 2] - d_single[0, 0]))), 0.0, places=10
+            float(jnp.max(jnp.abs(d_batched[:, 1, 2] - d_single[:, 0, 0]))),
+            0.0,
+            places=10,
         )
 
 
@@ -127,406 +140,329 @@ class TestTimeDomainResponseFrozen_LISA(unittest.TestCase):
 
         dt = 10.0
         n = 2048
-        t = jnp.arange(n) * dt
-        h_plus = jnp.sin(2 * jnp.pi * 1e-2 * t)
-        h_cross = jnp.cos(2 * jnp.pi * 1e-2 * t)
+        response.waveform = gwr.Waveform(
+            strain_td=lambda t, params: (
+                jnp.sin(2 * jnp.pi * 1e-2 * t) + 0j,
+                jnp.cos(2 * jnp.pi * 1e-2 * t) + 0j,
+            )
+        )
 
         d_t = response.get_response_frozen_td(
-            lisa, 0.0, theta, phi, h_plus, h_cross, dt, combination="XYZ"
+            lisa, 0.0, theta, phi, None, n, dt, combination="XYZ"
         )
-        self.assertEqual(d_t.shape, (1, 3, 1, n))
+        self.assertEqual(d_t.shape, (n, 1, 3, 1))
         self.assertTrue(bool(jnp.all(jnp.isfinite(d_t))))
 
-
-class TestInstantaneousTimeDomainResponseSpectral(unittest.TestCase):
-    """
-    Cross-checks Response.get_response_spectral_td (which
-    evaluates the detector's own evolving configuration and instantaneous
-    frequency at every sample, from the Hilbert-transform/analytic-signal
-    envelope of real h_plus/h_cross arrays) against the already-tested
-    FFT-based get_response_frozen_td: per the requirement that the two
-    genuinely-different methods agree whenever the detector's configuration
-    doesn't change appreciably over the signal's duration.
-    """
-
-    def test_ligo_matches_fft_method_exactly(self):
-        # LIGO's geometry doesn't depend on time_in_years at all (a static,
-        # non-rotating frame in this codebase), so any uniformly-spaced
-        # times_in_years grid is, by construction, the frozen-geometry
-        # case -- an exact (not just approximate) cross-check. f0 is
-        # chosen on an exact FFT bin so h_plus/h_cross are exactly periodic
-        # in the sample window, with no analytic-signal leakage either.
-        ligo = gwr.LIGO()
-        response = ligo.response
-        pixel = gwr.Pixel()
-        assert pixel.theta_pixel is not None and pixel.phi_pixel is not None
-        theta, phi = pixel.theta_pixel[:1], pixel.phi_pixel[:1]
-
-        dt = 1.0 / (4 * ligo.fmax)
-        n = 4096
-        df = 1.0 / (n * dt)
-        f0 = 101 * df
-        t = jnp.arange(n) * dt
-        h_plus = jnp.cos(2 * jnp.pi * f0 * t)
-        h_cross = 0.3 * jnp.sin(2 * jnp.pi * f0 * t)
-
-        times_in_years = t / ligo.ps.yr
-        d_instantaneous = response.get_response_spectral_td(
-            ligo, times_in_years, theta, phi, h_plus, h_cross
-        )
-        self.assertEqual(d_instantaneous.shape, (n,))
-        self.assertTrue(bool(jnp.all(jnp.isfinite(d_instantaneous))))
-
-        d_fft = response.get_response_frozen_td(
-            ligo, 0.0, theta, phi, h_plus, h_cross, dt
-        )[0, 0]
-
-        max_err = float(jnp.max(jnp.abs(d_instantaneous - d_fft)))
-        scale = float(jnp.max(jnp.abs(d_fft)))
-        self.assertLess(max_err / scale, 1e-6)
-
-    def test_two_tones_as_separate_modes_matches_fft(self):
-        # Two well-separated tones, on exact FFT bins so each is exactly
-        # periodic in the sample window (no leakage). Passed as two
-        # independent modes (shape (2, n)) rather than summed into one
-        # h_plus array, each mode's Hilbert-transform envelope and
-        # instantaneous frequency are computed independently, so this
-        # matches the FFT method just as exactly as the single-tone case
-        # above -- unlike summing them first, which breaks the analytic
-        # signal's instantaneous frequency (see the next test).
-        ligo = gwr.LIGO()
-        response = ligo.response
-        pixel = gwr.Pixel()
-        assert pixel.theta_pixel is not None and pixel.phi_pixel is not None
-        theta, phi = pixel.theta_pixel[:1], pixel.phi_pixel[:1]
-
-        dt = 1.0 / (4 * ligo.fmax)
-        n = 4096
-        df = 1.0 / (n * dt)
-        f1 = 101 * df
-        f2 = 401 * df
-        t = jnp.arange(n) * dt
-
-        h_plus_modes = jnp.stack(
-            [jnp.cos(2 * jnp.pi * f1 * t), jnp.cos(2 * jnp.pi * f2 * t)]
-        )
-        h_cross_modes = jnp.zeros((2, n))
-
-        times_in_years = t / ligo.ps.yr
-        d_modes = response.get_response_spectral_td(
-            ligo, times_in_years, theta, phi, h_plus_modes, h_cross_modes
-        )
-        self.assertEqual(d_modes.shape, (n,))
-        self.assertTrue(bool(jnp.all(jnp.isfinite(d_modes))))
-
-        h_plus_summed = h_plus_modes[0] + h_plus_modes[1]
-        h_cross_summed = jnp.zeros(n)
-        d_fft = response.get_response_frozen_td(
-            ligo, 0.0, theta, phi, h_plus_summed, h_cross_summed, dt
-        )[0, 0]
-
-        max_err = float(jnp.max(jnp.abs(d_modes - d_fft)))
-        scale = float(jnp.max(jnp.abs(d_fft)))
-        self.assertLess(max_err / scale, 1e-6)
-
-    def test_two_tones_summed_into_one_mode_breaks_down(self):
-        # The same two tones as above, but summed into a single (time,)
-        # h_plus before extracting one instantaneous frequency from it --
-        # demonstrates why the previous test passes them as separate modes
-        # instead. LIGO's geometry never moves, so any disagreement here is
-        # entirely due to this method's narrowband assumption, not orbital
-        # motion.
-        ligo = gwr.LIGO()
-        response = ligo.response
-        pixel = gwr.Pixel()
-        assert pixel.theta_pixel is not None and pixel.phi_pixel is not None
-        theta, phi = pixel.theta_pixel[:1], pixel.phi_pixel[:1]
-
-        dt = 1.0 / (4 * ligo.fmax)
-        n = 4096
-        df = 1.0 / (n * dt)
-        f1 = 101 * df
-        f2 = 401 * df
-        t = jnp.arange(n) * dt
-
-        h_plus = jnp.cos(2 * jnp.pi * f1 * t) + jnp.cos(2 * jnp.pi * f2 * t)
-        h_cross = jnp.zeros(n)
-
-        times_in_years = t / ligo.ps.yr
-        d_instantaneous = response.get_response_spectral_td(
-            ligo, times_in_years, theta, phi, h_plus, h_cross
-        )
-        d_fft = response.get_response_frozen_td(
-            ligo, 0.0, theta, phi, h_plus, h_cross, dt
-        )[0, 0]
-
-        max_err = float(jnp.max(jnp.abs(d_instantaneous - d_fft)))
-        scale = float(jnp.max(jnp.abs(d_fft)))
-        self.assertGreater(max_err / scale, 0.1)  # a real, large breakdown
-
-    @staticmethod
-    def _lisa_relative_error(response, lisa, theta, phi, t_ref_years, n, dt, f0):
-        t = jnp.arange(n) * dt
-        h_plus = jnp.cos(2 * jnp.pi * f0 * t)
-        h_cross = 0.5 * jnp.sin(2 * jnp.pi * f0 * t)
-        times_in_years = t_ref_years + t / lisa.ps.yr
-
-        d_instantaneous = response.get_response_spectral_td(
-            lisa, times_in_years, theta, phi, h_plus, h_cross, combination="XYZ"
-        )
-        d_fft = response.get_response_frozen_td(
-            lisa, t_ref_years, theta, phi, h_plus, h_cross, dt, combination="XYZ"
-        )[0, :, 0]
-
-        max_err = float(jnp.max(jnp.abs(d_instantaneous - d_fft)))
-        scale = float(jnp.max(jnp.abs(d_fft)))
-        return max_err / scale, d_instantaneous
-
-    def test_lisa_matches_fft_method_short_duration(self):
-        # Over a duration much shorter than LISA's orbital period, the
-        # constellation's motion is negligible, so the two methods should
-        # still agree to high precision.
+    def test_strain_fd_matches_strain_td(self):
+        # A Waveform with both strain_td and strain_fd set to the same
+        # underlying signal (one exact-FFT of the other, on this method's
+        # own jnp.fft.rfftfreq(n, d=dt) grid) should give the same response
+        # regardless of which path get_response_frozen_td takes -- strain_fd
+        # (used directly, no FFT) should win when both are set.
         lisa = gwr.LISA()
         response = lisa.response
         pixel = gwr.Pixel()
         assert pixel.theta_pixel is not None and pixel.phi_pixel is not None
         theta, phi = pixel.theta_pixel[:1], pixel.phi_pixel[:1]
 
-        dt = 0.5
-        n = 128  # ~1 minute total
-        df = 1.0 / (n * dt)
-        f0 = round(0.05 / df) * df
-
-        rel_err, d_instantaneous = self._lisa_relative_error(
-            response, lisa, theta, phi, 0.3, n, dt, f0
-        )
-        self.assertEqual(d_instantaneous.shape, (3, n))
-        self.assertTrue(bool(jnp.all(jnp.isfinite(d_instantaneous))))
-        self.assertLess(rel_err, 1e-3)
-
-    def test_lisa_deviation_scales_linearly_with_duration(self):
-        # The only difference from get_response_frozen_td in this
-        # monochromatic, otherwise-frozen setup is that the instantaneous
-        # method evaluates the detector's actual (slightly) evolving
-        # configuration over times_in_years' span instead of freezing it
-        # at t_ref_years -- so to leading order in the (tiny) orbital-phase
-        # change over a short span, the discrepancy between the two methods
-        # should scale linearly with duration. Checking that scaling
-        # (rather than just bounding the error at one duration) confirms
-        # it's a genuine, well-behaved geometric effect, not a numerical
-        # artifact -- see the shape of :meth:`_lisa_relative_error`'s
-        # output at several durations, which was used to establish this
-        # scaling empirically.
-        lisa = gwr.LISA()
-        response = lisa.response
-        pixel = gwr.Pixel()
-        assert pixel.theta_pixel is not None and pixel.phi_pixel is not None
-        theta, phi = pixel.theta_pixel[:1], pixel.phi_pixel[:1]
-
-        dt = 0.5
-        target_f0 = 0.05
-
-        def rel_err_at(n):
-            df = 1.0 / (n * dt)
-            f0 = round(target_f0 / df) * df
-            err, _ = self._lisa_relative_error(
-                response, lisa, theta, phi, 0.3, n, dt, f0
-            )
-            return err
-
-        err_long = rel_err_at(2048)  # 1024 s
-        err_short = rel_err_at(1024)  # 512 s -- half the duration
-
-        self.assertGreater(err_long, 1e-4)  # a real, measurable effect
-        ratio = err_short / err_long
-        self.assertGreater(ratio, 0.35)  # halving duration ~halves the error
-        self.assertLess(ratio, 0.65)
-
-    def test_lisa_real_motion_gives_small_but_nonzero_deviation(self):
-        # Now span a duration long enough for LISA's orbital motion to
-        # matter (half a year) -- the instantaneous method should visibly
-        # deviate from the frozen-geometry FFT method, but only by a
-        # modest amount.
-        lisa = gwr.LISA()
-        response = lisa.response
-        pixel = gwr.Pixel()
-        assert pixel.theta_pixel is not None and pixel.phi_pixel is not None
-        theta, phi = pixel.theta_pixel[:1], pixel.phi_pixel[:1]
-
+        dt = 10.0
         n = 2048
-        dt = (0.5 * lisa.ps.yr) / n
-        df = 1.0 / (n * dt)
-        f0 = 101 * df
-        t = jnp.arange(n) * dt
-        h_plus = jnp.cos(2 * jnp.pi * f0 * t)
-        h_cross = 0.5 * jnp.sin(2 * jnp.pi * f0 * t)
+        t_grid = jnp.arange(n) * dt
+        h_plus_td = jnp.sin(2 * jnp.pi * 1e-2 * t_grid)
+        h_cross_td = jnp.cos(2 * jnp.pi * 1e-2 * t_grid)
+        h_f_plus = gwr.strain_to_frequency_domain(h_plus_td, dt)
+        h_f_cross = gwr.strain_to_frequency_domain(h_cross_td, dt)
 
-        t_ref_years = 0.0
-        times_in_years = t_ref_years + t / lisa.ps.yr
-        d_instantaneous = response.get_response_spectral_td(
-            lisa, times_in_years, theta, phi, h_plus, h_cross, combination="XYZ"
+        response.waveform = gwr.Waveform(
+            strain_td=lambda t, params: (h_plus_td + 0j, h_cross_td + 0j)
         )
-        self.assertTrue(bool(jnp.all(jnp.isfinite(d_instantaneous))))
+        d_from_td = response.get_response_frozen_td(
+            lisa, 0.0, theta, phi, None, n, dt, combination="XYZ"
+        )
 
-        d_fft = response.get_response_frozen_td(
-            lisa, t_ref_years, theta, phi, h_plus, h_cross, dt, combination="XYZ"
-        )[0, :, 0]
-        scale = float(jnp.max(jnp.abs(d_fft)))
-        deviation = float(jnp.max(jnp.abs(d_instantaneous - d_fft))) / scale
-        self.assertGreater(deviation, 1e-3)  # actually captures the motion
-        self.assertLess(deviation, 1.0)  # but stays a modest correction
+        response.waveform = gwr.Waveform(
+            strain_fd=lambda f, params: (h_f_plus, h_f_cross)
+        )
+        d_from_fd = response.get_response_frozen_td(
+            lisa, 0.0, theta, phi, None, n, dt, combination="XYZ"
+        )
 
-    def test_multiple_sky_positions_raises(self):
+        self.assertAlmostEqual(
+            float(jnp.max(jnp.abs(d_from_td - d_from_fd))), 0.0, places=10
+        )
+
+    def test_waveform_without_strain_raises(self):
         lisa = gwr.LISA()
         response = lisa.response
         pixel = gwr.Pixel()
         assert pixel.theta_pixel is not None and pixel.phi_pixel is not None
-        theta, phi = pixel.theta_pixel[:3], pixel.phi_pixel[:3]
+        theta, phi = pixel.theta_pixel[:1], pixel.phi_pixel[:1]
 
-        dt = 100.0
-        n = 256
-        t = jnp.arange(n) * dt
-        h_plus = jnp.sin(2 * jnp.pi * 1e-3 * t)
-        h_cross = jnp.cos(2 * jnp.pi * 1e-3 * t)
-        times_in_years = t / lisa.ps.yr
-
+        response.waveform = gwr.Waveform()  # neither strain_td nor strain_fd set
         with self.assertRaises(ValueError):
-            response.get_response_spectral_td(
-                lisa, times_in_years, theta, phi, h_plus, h_cross, combination="XYZ"
-            )
+            response.get_response_frozen_td(lisa, 0.0, theta, phi, None, 128, 10.0)
 
 
-class TestInstantaneousTimeDomainResponseAutodiff(unittest.TestCase):
+class TestSingleLinkDelayRetardedSegmentedTD(unittest.TestCase):
     """
-    Cross-checks Response.get_response_autodiff_td --
-    the autodiff-exact sibling of get_response_spectral_td, taking
-    amplitude/phase as JAX callables instead of sampled arrays, with no FFT
-    anywhere -- against both the array-based method (fed samples of the
-    same closed-form waveform) and the FFT-based get_response_frozen_td.
+    Regression coverage for Response.get_single_link_response_delay_td (including its
+    frozen-geometry special case, via a constant `times_geometry_years`) and
+    get_single_link_response_segmented_td, against golden-snapshot fixtures of their
+    own output, confirmed exact to machine precision.
     """
 
-    def test_ligo_matches_array_and_fft_methods(self):
-        ligo = gwr.LIGO()
-        response = ligo.response
-        pixel = gwr.Pixel()
-        assert pixel.theta_pixel is not None and pixel.phi_pixel is not None
-        theta, phi = pixel.theta_pixel[:1], pixel.phi_pixel[:1]
-
-        dt = 1.0 / (4 * ligo.fmax)
-        n = 4096
-        df = 1.0 / (n * dt)
-        f0 = 101 * df
-
-        def phase(t):
-            return 2 * jnp.pi * f0 * t
-
-        def amplitude_plus(t):
-            return 1.0
-
-        def amplitude_cross(t):
-            return 0.3
-
-        t = jnp.arange(n) * dt
-        times_in_years = t / ligo.ps.yr
-
-        d_autodiff = response.get_response_autodiff_td(
-            ligo, times_in_years, theta, phi, amplitude_plus, amplitude_cross, phase
-        )
-        self.assertEqual(d_autodiff.shape, (n,))
-        self.assertTrue(bool(jnp.all(jnp.isfinite(d_autodiff))))
-
-        h_plus = jnp.cos(phase(t))
-        h_cross = 0.3 * jnp.sin(phase(t))
-        d_array = response.get_response_spectral_td(
-            ligo, times_in_years, theta, phi, h_plus, h_cross
-        )
-        d_fft = response.get_response_frozen_td(
-            ligo, 0.0, theta, phi, h_plus, h_cross, dt
-        )[0, 0]
-
-        scale = float(jnp.max(jnp.abs(d_fft)))
-        self.assertLess(float(jnp.max(jnp.abs(d_autodiff - d_array))) / scale, 1e-6)
-        self.assertLess(float(jnp.max(jnp.abs(d_autodiff - d_fft))) / scale, 1e-6)
-
-    def test_lisa_chirp_captures_real_motion(self):
-        # A genuinely time-varying (chirping) phase -- exercises jax.grad
-        # giving a per-sample instantaneous frequency that itself varies,
-        # with no FFT/windowing anywhere in the computation.
+    def test_delay_td_matches_reference(self):
         lisa = gwr.LISA()
         response = lisa.response
         pixel = gwr.Pixel()
         assert pixel.theta_pixel is not None and pixel.phi_pixel is not None
         theta, phi = pixel.theta_pixel[:1], pixel.phi_pixel[:1]
 
-        n = 2048
-        dt = (0.5 * lisa.ps.yr) / n
-        df = 1.0 / (n * dt)
-        f0 = 101 * df
-        fdot = f0 / (n * dt)  # a modest frequency drift over the signal
+        times = jnp.linspace(0.0, 0.01, 50)
 
-        def phase(t):
-            return 2 * jnp.pi * (f0 * t + 0.5 * fdot * t**2)
+        def amplitude_plus(t, params):
+            return jnp.asarray(1e-21)
 
-        def amplitude_plus(t):
-            return 1.0
+        def amplitude_cross(t, params):
+            return jnp.asarray(0.5e-21)
 
-        def amplitude_cross(t):
-            return 0.5
+        def phase(t, params):
+            return 2 * jnp.pi * 1e-2 * t
 
-        t = jnp.arange(n) * dt
-        times_in_years = t / lisa.ps.yr
+        response.waveform = gwr.Waveform.from_amplitude_phase(
+            amplitude_plus, amplitude_cross, phase
+        )
 
-        d_autodiff = response.get_response_autodiff_td(
+        d_t = response.get_single_link_response_delay_td(
+            lisa, times, theta, phi, None
+        )
+        self.assertEqual(d_t.shape, (50, 6))
+        self.assertTrue(bool(jnp.all(jnp.isfinite(d_t))))
+
+        save_arr = np.load(TEST_DATA_PATH_lisa + "single_link_response_delay_td.npy")
+        self.assertAlmostEqual(float(jnp.max(jnp.abs(d_t - save_arr))), 0.0, places=12)
+
+    def test_reassigning_waveform_is_not_stale_cached(self):
+        # get_single_link_response_delay_td/get_single_link_response_segmented_td
+        # read self.waveform via a deliberately unjitted wrapper specifically
+        # so that reassigning it between calls is always picked up, rather
+        # than risking a jax.jit cache hit keyed off self's identity (which
+        # doesn't change when only self.waveform's *content* does) silently
+        # returning the first call's stale result. This exercises exactly
+        # that: same response object, same call arguments, two different
+        # waveforms.
+        lisa = gwr.LISA()
+        response = lisa.response
+        pixel = gwr.Pixel()
+        assert pixel.theta_pixel is not None and pixel.phi_pixel is not None
+        theta, phi = pixel.theta_pixel[:1], pixel.phi_pixel[:1]
+
+        times = jnp.linspace(0.0, 0.01, 50)
+        waveform_a = gwr.Waveform.from_amplitude_phase(
+            amplitude_plus=lambda t, params: jnp.asarray(1e-21),
+            amplitude_cross=lambda t, params: jnp.asarray(0.5e-21),
+            phase=lambda t, params: jnp.asarray(2 * jnp.pi * 1e-2 * t),
+        )
+        waveform_b = gwr.Waveform.from_amplitude_phase(
+            amplitude_plus=lambda t, params: jnp.asarray(3e-21),
+            amplitude_cross=lambda t, params: jnp.asarray(2e-21),
+            phase=lambda t, params: jnp.asarray(2 * jnp.pi * 3e-2 * t + 0.7),
+        )
+
+        for method_name, kwargs in (
+            ("get_single_link_response_delay_td", {}),
+            ("get_single_link_response_segmented_td", {"segment_length": 10}),
+        ):
+            method = getattr(response, method_name)
+
+            response.waveform = waveform_a
+            d_a_first = method(lisa, times, theta, phi, None, **kwargs)
+            response.waveform = waveform_b
+            d_b = method(lisa, times, theta, phi, None, **kwargs)
+            response.waveform = waveform_a
+            d_a_second = method(lisa, times, theta, phi, None, **kwargs)
+
+            with self.subTest(method=method_name):
+                # Re-running with the original waveform reproduces the
+                # original output exactly (no cross-call contamination).
+                self.assertAlmostEqual(
+                    float(jnp.max(jnp.abs(d_a_first - d_a_second))), 0.0, places=12
+                )
+                # A different waveform gives a genuinely different result
+                # (not the first call's cached output).
+                self.assertGreater(float(jnp.max(jnp.abs(d_b - d_a_first))), 0.0)
+
+    def test_waveform_not_set_raises(self):
+        lisa = gwr.LISA()
+        response = lisa.response
+        pixel = gwr.Pixel()
+        assert pixel.theta_pixel is not None and pixel.phi_pixel is not None
+        theta, phi = pixel.theta_pixel[:1], pixel.phi_pixel[:1]
+        times = jnp.linspace(0.0, 0.01, 50)
+
+        response.waveform = None
+        with self.assertRaises(ValueError):
+            response.get_single_link_response_delay_td(lisa, times, theta, phi, None)
+        with self.assertRaises(ValueError):
+            response.get_single_link_response_segmented_td(
+                lisa, times, theta, phi, None, segment_length=10
+            )
+
+    def test_segmented_td_matches_reference(self):
+        lisa = gwr.LISA()
+        response = lisa.response
+        pixel = gwr.Pixel()
+        assert pixel.theta_pixel is not None and pixel.phi_pixel is not None
+        theta, phi = pixel.theta_pixel[:1], pixel.phi_pixel[:1]
+
+        times = jnp.linspace(0.0, 0.01, 50)
+
+        def amplitude_plus(t, params):
+            return jnp.asarray(1e-21)
+
+        def amplitude_cross(t, params):
+            return jnp.asarray(0.5e-21)
+
+        def phase(t, params):
+            return 2 * jnp.pi * 1e-2 * t
+
+        response.waveform = gwr.Waveform.from_amplitude_phase(
+            amplitude_plus, amplitude_cross, phase
+        )
+
+        d_t = response.get_single_link_response_segmented_td(
             lisa,
-            times_in_years,
+            times,
             theta,
             phi,
-            amplitude_plus,
-            amplitude_cross,
-            phase,
-            combination="XYZ",
+            None,
+            segment_length=10,
         )
-        self.assertEqual(d_autodiff.shape, (3, n))
-        self.assertTrue(bool(jnp.all(jnp.isfinite(d_autodiff))))
+        self.assertEqual(d_t.shape, (50, 6))
+        self.assertTrue(bool(jnp.all(jnp.isfinite(d_t))))
 
-        d_fft = response.get_response_frozen_td(
-            lisa,
-            0.0,
-            theta,
-            phi,
-            jnp.cos(phase(t)),
-            0.5 * jnp.sin(phase(t)),
-            dt,
-            combination="XYZ",
-        )[0, :, 0]
-        scale = float(jnp.max(jnp.abs(d_fft)))
-        deviation = float(jnp.max(jnp.abs(d_autodiff - d_fft))) / scale
-        self.assertGreater(deviation, 1e-3)  # actually captures the motion
-        self.assertLess(deviation, 1.0)  # but stays a modest correction
+        save_arr = np.load(
+            TEST_DATA_PATH_lisa + "single_link_response_segmented_td.npy"
+        )
+        self.assertAlmostEqual(float(jnp.max(jnp.abs(d_t - save_arr))), 0.0, places=12)
 
-    def test_multiple_sky_positions_raises(self):
+        # Also cross-checks against the exact delay_td reference it
+        # approximates -- segment_length=10 should already track it closely.
+        delay_reference = np.load(
+            TEST_DATA_PATH_lisa + "single_link_response_delay_td.npy"
+        )
+        rel_err = float(
+            jnp.max(jnp.abs(d_t - delay_reference)) / jnp.max(jnp.abs(delay_reference))
+        )
+        self.assertLess(rel_err, 1e-4)
+
+
+class TestTDIResponseDelayTD(unittest.TestCase):
+    """
+    Regression coverage for Response.get_response_delay_td -- the TDI 1.5
+    (unequal but locally-constant arms) time-domain combination, exact for evolving
+    geometry, from Muratore, Vetrugno & Vitale (arXiv:2303.15929, eq. 2.24).
+    """
+
+    def _lisa_with_waveform(self):
         lisa = gwr.LISA()
         response = lisa.response
         pixel = gwr.Pixel()
         assert pixel.theta_pixel is not None and pixel.phi_pixel is not None
-        theta, phi = pixel.theta_pixel[:3], pixel.phi_pixel[:3]
+        theta, phi = pixel.theta_pixel[:1], pixel.phi_pixel[:1]
 
-        n = 256
-        dt = 100.0
-        t = jnp.arange(n) * dt
-        times_in_years = t / lisa.ps.yr
+        def amplitude_plus(t, params):
+            return jnp.asarray(1e-21)
 
-        with self.assertRaises(ValueError):
-            response.get_response_autodiff_td(
-                lisa,
-                times_in_years,
-                theta,
-                phi,
-                lambda t: 1.0,
-                lambda t: 0.5,
-                lambda t: 2 * jnp.pi * 1e-3 * t,
-                combination="XYZ",
+        def amplitude_cross(t, params):
+            return jnp.asarray(0.5e-21)
+
+        def phase(t, params):
+            return 2 * jnp.pi * 3e-3 * t
+
+        response.waveform = gwr.Waveform.from_amplitude_phase(
+            amplitude_plus, amplitude_cross, phase
+        )
+        return lisa, response, theta, phi
+
+    def test_zeta_matches_independent_manual_construction(self):
+        # Rebuilds zeta = D12(eta31-eta32) + D23(eta12-eta13) + D31(eta23-eta21)
+        # (eq. 2.24c) from scratch here, using only the already-tested
+        # get_single_link_response_delay_td/detector_arms_retarded -- an
+        # independent check of get_response_delay_td's own internal term
+        # tables/orchestration, not just a re-run of the same code.
+        lisa, response, theta, phi = self._lisa_with_waveform()
+        times = jnp.linspace(0.0, 0.005, 40)
+
+        _, ltt, _ = lisa.detector_arms_retarded(times, lisa.response.ps)
+        arm_order = (12, 23, 31, 21, 32, 13)
+        ltt_by_arm = {label: ltt[:, i] for i, label in enumerate(arm_order)}
+
+        def arm_at(shift_labels, arm_label):
+            delay = (
+                sum(ltt_by_arm[label] for label in shift_labels)
+                if shift_labels
+                else 0.0
             )
+            shifted = times - delay / lisa.ps.yr
+            y = response.get_single_link_response_delay_td(
+                lisa, shifted, theta, phi, None
+            )
+            return y[:, arm_order.index(arm_label)]
+
+        zeta_manual = (
+            (arm_at((12,), 31) - arm_at((12,), 32))
+            + (arm_at((23,), 12) - arm_at((23,), 13))
+            + (arm_at((31,), 23) - arm_at((31,), 21))
+        )
+
+        d_t = response.get_response_delay_td(
+            lisa, times, theta, phi, None, combination="AE_zeta"
+        )
+        zeta_from_method = d_t[:, 2]
+
+        self.assertAlmostEqual(
+            float(jnp.max(jnp.abs(zeta_manual - zeta_from_method))), 0.0, places=10
+        )
+
+    def test_shapes_and_finite_for_all_combinations(self):
+        lisa, response, theta, phi = self._lisa_with_waveform()
+        times = jnp.linspace(0.0, 0.005, 30)
+
+        for combination in (
+            "XYZ",
+            "AET",
+            "Sagnac",
+            "AET_Sagnac",
+            "AE_zeta",
+            "AE_Sagnac_zeta",
+        ):
+            with self.subTest(combination=combination):
+                d_t = response.get_response_delay_td(
+                    lisa, times, theta, phi, None, combination=combination
+                )
+                self.assertEqual(d_t.shape, (30, 3))
+                self.assertTrue(bool(jnp.all(jnp.isfinite(d_t))))
+
+    def test_unknown_combination_raises(self):
+        lisa, response, theta, phi = self._lisa_with_waveform()
+        times = jnp.linspace(0.0, 0.005, 10)
+        with self.assertRaises(ValueError):
+            response.get_response_delay_td(
+                lisa, times, theta, phi, None, combination="not_a_combination"
+            )
+
+    def test_waveform_not_set_raises(self):
+        lisa = gwr.LISA()
+        response = lisa.response
+        pixel = gwr.Pixel()
+        assert pixel.theta_pixel is not None and pixel.phi_pixel is not None
+        theta, phi = pixel.theta_pixel[:1], pixel.phi_pixel[:1]
+        times = jnp.linspace(0.0, 0.005, 10)
+
+        response.waveform = None
+        with self.assertRaises(ValueError):
+            response.get_response_delay_td(lisa, times, theta, phi, None)
 
 
 if __name__ == "__main__":

@@ -9,6 +9,7 @@ from typing import Any, TYPE_CHECKING
 from jax.typing import ArrayLike
 
 # Local imports
+from gw_response.constants import PhysicalConstants
 from gw_response.utils import as_time_array
 
 if TYPE_CHECKING:
@@ -17,11 +18,12 @@ if TYPE_CHECKING:
 
 
 class Detector(ABC):
-    """Abstract base class for a gravitational wave detector.
+    """
+    Abstract base class for a gravitational wave detector.
 
-    Concrete subclasses (e.g. ``LISA``, ``LIGO``) must provide the
-    detector's basic characteristics as class attributes, and implement the
-    methods that describe its geometry, response and noise.
+    Concrete subclasses (e.g. ``LISA``, ``LIGO``) must provide the detector's basic
+    characteristics as class attributes, and implement the methods that describe its
+    geometry, response and noise.
 
     Attributes:
         name: Human-readable name of the detector.
@@ -30,10 +32,10 @@ class Detector(ABC):
         armlength: Nominal detector arm length, in meters.
         res: Expected relative resolution/precision of the detector.
         ps: Detector-specific physical/instrumental parameters.
-        default_combination: Name of the default readout combination (e.g.
-            a TDI variable for LISA) used when none is specified.
-        response: Response object used to compute the detector's response
-            to gravitational waves.
+        default_combination: Name of the default readout combination (e.g. a TDI
+            variable for LISA) used when none is specified.
+        response: Response object used to compute the detector's response to
+            gravitational waves.
         noise: Noise object used to compute the detector's noise budget.
     """
 
@@ -49,14 +51,15 @@ class Detector(ABC):
     noise: Noise
 
     def vertex_positions(self, time_in_years: ArrayLike) -> jax.Array:
-        """Computes satellite/vertex positions at the given time(s).
+        """
+        Computes satellite/vertex positions at the given time(s).
 
-        Args:
-            time_in_years: Time(s), in years, at which to evaluate the
-                vertex positions.
+                Args:
+                    time_in_years: Time(s), in years, at which to evaluate the vertex
+                    positions.
 
-        Returns:
-            Array of vertex positions.
+                Returns:
+                    Array of vertex positions.
         """
         return self._vertex_positions(as_time_array(time_in_years))
 
@@ -65,29 +68,29 @@ class Detector(ABC):
         """
         Concrete-detector implementation of :meth:`vertex_positions`.
 
-        `time_in_years` is already normalized to an array (of at least 1
-        dimension) by :func:`gw_response.utils.as_time_array` before this is
-        called, so implementations don't need to handle bare scalars
-        themselves.
+        `time_in_years` is already normalized to an array (of at least 1 dimension) by
+        :func:`gw_response.utils.as_time_array` before this is called, so
+        implementations don't need to handle bare scalars themselves.
 
         Args:
-            time_in_years (ArrayLike): Time(s), in years, at which to
-                evaluate the vertex positions.
+            time_in_years (ArrayLike): Time(s), in years, at which to evaluate the
+                vertex positions.
 
         Returns:
             jax.Array: Array of vertex positions.
         """
 
     def detector_arms(self, time_in_years: ArrayLike) -> jax.Array:
-        """Computes the detector's arm matrix at the given time(s).
+        """
+        Computes the detector's arm matrix at the given time(s).
 
         Args:
-            time_in_years: Time(s), in years, at which to evaluate the
+            time_in_years (ArrayLike): Time(s), in years, at which to evaluate the
                 detector arms.
 
         Returns:
-            Array representing the vector between each pair of vertices
-            (i.e. each detector arm).
+            Array representing the vector between each pair of vertices (i.e. each
+            detector arm).
         """
         return self._detector_arms(as_time_array(time_in_years))
 
@@ -96,19 +99,89 @@ class Detector(ABC):
         """
         Concrete-detector implementation of :meth:`detector_arms`.
 
-        `time_in_years` is already normalized to an array (of at least 1
-        dimension) by :func:`gw_response.utils.as_time_array` before this is
-        called, so implementations don't need to handle bare scalars
-        themselves.
+        `time_in_years` is already normalized to an array (of at least 1 dimension) by
+        :func:`gw_response.utils.as_time_array` before this is called, so
+        implementations don't need to handle bare scalars themselves.
 
         Args:
-            time_in_years (ArrayLike): Time(s), in years, at which to
-                evaluate the detector arms.
+            time_in_years (ArrayLike): Time(s), in years, at which to evaluate the
+                detector arms.
 
         Returns:
-            jax.Array: Array representing the vector between each pair of
-                vertices (i.e. each detector arm).
+            jax.Array: Array representing the vector between each pair of vertices (i.e.
+                each detector arm).
         """
+
+    @property
+    @abstractmethod
+    def arm_vertex_pairs(self) -> tuple[tuple[int, int], ...]:
+        """
+        For each of `detector_arms`'s arm columns, in the same order, the
+        (receiver_vertex_index, emitter_vertex_index) pair into `vertex_positions`'s own
+        vertex axis -- i.e. that arm's vector equals ``vertex_positions[...,
+        emitter_index] -vertex_positions[..., receiver_index]``. Lets generic
+        single-link code (e.g. :meth:`detector_arms_retarded`) compute each arm's
+        retarded (backdated-emitter) geometry without knowing the detector's specific
+        topology.
+
+        Returns:
+            tuple[tuple[int, int], ...]: One (receiver_index, emitter_index) pair per
+                arm.
+        """
+
+    def detector_arms_retarded(
+        self,
+        time_in_years: ArrayLike,
+        ps: PhysicalConstants,
+        freeze_geometry: bool = False,
+    ) -> tuple[jax.Array, jax.Array, jax.Array]:
+        """
+        Retarded counterpart of :meth:`detector_arms`: for each arm (per
+        `arm_vertex_pairs`), backdates the emitter's position by that arm's own
+        light-travel-time estimate, giving a genuinely asymmetric arm vector for a
+        moving detector -- unless `freeze_geometry`, which evaluates the emitter
+        simultaneously with the receiver instead, making this exactly
+        ``detector_arms(time_in_years)`` (per arm, alongside the same light-travel-time
+        estimate). Concrete (not abstract) and detector-agnostic, since it's driven
+        entirely by `vertex_positions`/`arm_vertex_pairs` -- shared by the frequency-
+        domain retarded pipeline and the exact time-domain single-link methods (see
+        :mod:`gw_response.space_based.single_link_geometry`).
+
+        Args:
+            time_in_years (ArrayLike): Time(s), in years, at which the receiver end of
+                each arm (and, if `freeze_geometry`, the emitter end too) is evaluated.
+            ps (PhysicalConstants): Physical constants (`light_speed`, `yr`).
+            freeze_geometry (bool): If True, evaluate the emitter at the same time as
+                the receiver instead of backdating it.
+
+        Returns:
+            tuple[jax.Array, jax.Array, jax.Array]: `(arm_vector, light_travel_time,
+                receiver_position)`, each with shape (configurations, vectorial_index
+                (3), arms) -- except `light_travel_time`, shape (configurations, arms)
+                -- stacked over the arms in `arm_vertex_pairs` order.
+        """
+        time_in_years = as_time_array(time_in_years)
+        positions_rec = self.vertex_positions(time_in_years)
+
+        arm_vectors, ltts, receivers = [], [], []
+        for receiver_idx, emitter_idx in self.arm_vertex_pairs:
+            x_rec = positions_rec[:, :, receiver_idx]
+            x_emi_simul = positions_rec[:, :, emitter_idx]
+            ltt_approx = jnp.linalg.norm(x_rec - x_emi_simul, axis=-1) / ps.light_speed
+            if freeze_geometry:
+                x_emi = x_emi_simul
+            else:
+                t_emi_years = time_in_years - ltt_approx / ps.yr
+                x_emi = self.vertex_positions(t_emi_years)[:, :, emitter_idx]
+            arm_vectors.append(x_emi - x_rec)
+            ltts.append(ltt_approx)
+            receivers.append(x_rec)
+
+        return (
+            jnp.stack(arm_vectors, axis=-1),
+            jnp.stack(ltts, axis=-1),
+            jnp.stack(receivers, axis=-1),
+        )
 
     def frequency_vec(self, freq_pts: int) -> jax.Array:
         """
@@ -118,40 +191,39 @@ class Detector(ABC):
             freq_pts (int): The number of frequency points to generate.
 
         Returns:
-            jax.Array: A linearly spaced array of frequency points within
-                the detector's operational frequency range, starting from
-                ``self.fmin`` to ``self.fmax``.
+            jax.Array: A linearly spaced array of frequency points within the detector's
+                operational frequency range, starting from ``self.fmin`` to
+                ``self.fmax``.
         """
         return jnp.linspace(self.fmin, self.fmax, freq_pts)
 
     def klvector(self, frequency_vec: ArrayLike) -> jax.Array:
         """
-        Computes the kl-vector for a given frequency vector, i.e. the
-        detector's arm length in units of the reduced wavelength.
+        Computes the kl-vector for a given frequency vector, i.e. the detector's arm
+        length in units of the reduced wavelength.
 
         Args:
-            frequency_vec (ArrayLike): An array of frequency values, in Hz,
-                for which the kl-vector is to be computed.
+            frequency_vec (ArrayLike): An array of frequency values, in Hz, for which
+                the kl-vector is to be computed.
 
         Returns:
-            jax.Array: An array representing the kl-vector, which is a
-                product of the frequency vector, the detector arm length, and
-                the inverse of the speed of light.
+            jax.Array: An array representing the kl-vector, which is a product of the
+                frequency vector, the detector arm length, and the inverse of the speed
+                of light.
         """
         return frequency_vec * self.armlength / self.ps.light_speed
 
     def x(self, frequency_vec: ArrayLike) -> jax.Array:
         """
-        Computes the x-parameter (``2 pi f L / c``) for a given frequency
-        vector.
+        Computes the x-parameter (``2 pi f L / c``) for a given frequency vector.
 
         Args:
-            frequency_vec (ArrayLike): An array of frequency values, in Hz,
-                for which the x-parameter is to be computed.
+            frequency_vec (ArrayLike): An array of frequency values, in Hz, for which
+                the x-parameter is to be computed.
 
         Returns:
-            jax.Array: An array representing the x-parameter, calculated as
-                2π times the kl-vector for the given frequency vector.
+            jax.Array: An array representing the x-parameter, calculated as 2π times the
+                kl-vector for the given frequency vector.
         """
         return 2 * jnp.pi * self.klvector(frequency_vec)
 
@@ -160,21 +232,19 @@ class Detector(ABC):
         self, combination: str, arms_matrix_rescaled: ArrayLike, x_vector: ArrayLike
     ) -> jax.Array:
         """
-        Builds the mixing matrix that turns per-link responses into the
-        detector's readout channel(s) for the requested combination (e.g. a
-        TDI variable for LISA, the Michelson combination for LIGO).
+        Builds the mixing matrix that turns per-link responses into the detector's
+        readout channel(s) for the requested combination (e.g. a TDI variable for LISA,
+        the Michelson combination for LIGO).
 
         Args:
-            combination (str): Name of the readout combination to build the
-                mixing matrix for.
-            arms_matrix_rescaled (ArrayLike): Detector arm vectors rescaled
-                by the arm length.
-            x_vector (ArrayLike): Vector of ``2 pi f L / c`` values over
-                frequency.
+            combination (str): Name of the readout combination to build the mixing
+                matrix for.
+            arms_matrix_rescaled (ArrayLike): Detector arm vectors rescaled by the arm
+                length.
+            x_vector (ArrayLike): Vector of ``2 pi f L / c`` values over frequency.
 
         Returns:
-            jax.Array: The mixing matrix, of shape (..., x_vector, channels,
-                arms).
+            jax.Array: The mixing matrix, of shape (..., x_vector, channels, arms).
         """
 
     @abstractmethod
@@ -182,14 +252,13 @@ class Detector(ABC):
         self, single_link: dict[str, jax.Array], combination_matrix: ArrayLike
     ) -> dict[str, jax.Array]:
         """
-        Applies `combination_matrix` (as built by `combination_matrix`) to
-        each polarization's single-link response, returning the dict of
-        linear integrands (keyed by polarization) for this detector.
+        Applies `combination_matrix` (as built by `combination_matrix`) to each
+        polarization's single-link response, returning the dict of linear integrands
+        (keyed by polarization) for this detector.
 
         Args:
-            single_link (dict): Single-link response per polarization, e.g.
-                as returned by
-                :meth:`gw_response.response.Response.get_single_link_response_fd`.
+            single_link (dict): Single-link response per polarization, e.g. as returned
+                by :meth:`gw_response.response.Response.get_single_link_response_fd`.
             combination_matrix (ArrayLike): Mixing matrix as built by
                 :meth:`combination_matrix`.
 
@@ -202,17 +271,16 @@ class Detector(ABC):
         self, linear_integrand: dict[str, jax.Array]
     ) -> dict[str, jax.Array]:
         """
-        Given the dict of linear integrands (keyed by polarization), returns
-        the dict of quadratic integrands for this detector.
+        Given the dict of linear integrands (keyed by polarization), returns the dict of
+        quadratic integrands for this detector.
 
         Args:
-            linear_integrand (dict): Linear response integrand per
-                polarization, as returned by
-                :meth:`linear_response_from_single_link`.
+            linear_integrand (dict): Linear response integrand per polarization, as
+                returned by :meth:`linear_response_from_single_link`.
 
         Returns:
-            dict: The quadratic response integrand per doubled polarization
-                letter (e.g. "LL", "RR").
+            dict: The quadratic response integrand per doubled polarization letter (e.g.
+                "LL", "RR").
         """
 
     @abstractmethod
@@ -220,17 +288,17 @@ class Detector(ABC):
         self, quadratic_integrand: dict[str, jax.Array]
     ) -> dict[str, jax.Array]:
         """
-        Given the dict of quadratic integrands (keyed by polarization) for a
-        single combination, returns the corresponding integrated response.
+        Given the dict of quadratic integrands (keyed by polarization) for a single
+        combination, returns the corresponding integrated response.
 
         Args:
-            quadratic_integrand (dict): Quadratic response integrand per
-                doubled polarization letter, as returned by
+            quadratic_integrand (dict): Quadratic response integrand per doubled
+                polarization letter, as returned by
                 :meth:`quadratic_response_from_single_link`.
 
         Returns:
-            dict: The integrated (e.g. sky-averaged) quadratic response per
-                doubled polarization letter.
+            dict: The integrated (e.g. sky-averaged) quadratic response per doubled
+                polarization letter.
         """
 
     @abstractmethod
@@ -242,20 +310,19 @@ class Detector(ABC):
         **noise_parameters,
     ) -> jax.Array:
         """
-        Builds the per-link noise covariance (or, for detectors with no
-        per-link decomposition, the already-combined noise) before
-        projection into a readout combination. `noise_parameters` are
-        whatever detector-specific noise parameters this needs (e.g. LISA's
-        TM_acceleration_parameters/OMS_parameters); LIGO takes none.
+        Builds the per-link noise covariance (or, for detectors with no per-link
+        decomposition, the already-combined noise) before projection into a readout
+        combination. `noise_parameters` are whatever detector-specific noise parameters
+        this needs (e.g. LISA's TM_acceleration_parameters/OMS_parameters); LIGO takes
+        none.
 
         Args:
-            frequency_array (ArrayLike): Frequency values, in Hz, at which
-                to evaluate the noise.
-            arms_matrix_rescaled (ArrayLike): Detector arm vectors rescaled
-                by the arm length.
-            x_vector (ArrayLike): Vector of ``2 pi f L / c`` values over
-                frequency.
-            **noise_parameters: Detector-specific noise parameters.
+            frequency_array (ArrayLike): Frequency values, in Hz, at which to evaluate
+                the noise.
+            arms_matrix_rescaled (ArrayLike): Detector arm vectors rescaled by the arm
+                length.
+            x_vector (ArrayLike): Vector of ``2 pi f L / c`` values over frequency.
+                **noise_parameters: Detector-specific noise parameters.
 
         Returns:
             jax.Array: The per-link (or already-combined) noise covariance.
@@ -266,20 +333,18 @@ class Detector(ABC):
         self, combination_matrix: ArrayLike, single_link_noise: jax.Array
     ) -> jax.Array:
         """
-        Projects `single_link_noise` (as built by `single_link_noise`) into
-        the readout basis defined by `combination_matrix` (as built by
-        `combination_matrix`), e.g. via the congruence transform
-        combination_matrix @ single_link_noise @ combination_matrix^H.
-        Detectors without a per-link decomposition (e.g. LIGO) can simply
-        return `single_link_noise` unchanged.
+        Projects `single_link_noise` (as built by `single_link_noise`) into the readout
+        basis defined by `combination_matrix` (as built by `combination_matrix`), e.g.
+        via the congruence transform combination_matrix @ single_link_noise @
+        combination_matrix^H. Detectors without a per-link decomposition (e.g. LIGO) can
+        simply return `single_link_noise` unchanged.
 
         Args:
             combination_matrix (ArrayLike): Mixing matrix as built by
                 :meth:`combination_matrix`.
-            single_link_noise (jax.Array): Per-link noise covariance, as
-                built by :meth:`single_link_noise`.
+            single_link_noise (jax.Array): Per-link noise covariance, as built by
+                :meth:`single_link_noise`.
 
         Returns:
-            jax.Array: The noise covariance, projected into the readout
-                basis.
+            jax.Array: The noise covariance, projected into the readout basis.
         """

@@ -113,22 +113,22 @@ class TestTDI(unittest.TestCase):
             arms_matrix_rescaled=lisa.detector_arms(0.0) / lisa.armlength,
             polarization_tensor=e1L,
         )
-        xi_k_A = gwr.xi_k_A(
+        xi_k_A_static = gwr.xi_k_A_static(
             arms_matrix_rescaled=lisa.detector_arms(0.0) / lisa.armlength,
             unit_wavevector=unit_vector,
             x_vector=lisa.x(freqs),
             geometrical=geomtrical_factor,
         )
-        single_link_response = gwr.single_link_response(
+        single_link_response_static = gwr.single_link_response_static(
             positions_rescaled=lisa.vertex_positions(0.0) / lisa.armlength,
             arms_matrix_rescaled=lisa.detector_arms(0.0) / lisa.armlength,
             wavevector=unit_vector,
             x_vector=lisa.x(freqs),
-            xi_k_A=xi_k_A,
+            xi_k_A_static=xi_k_A_static,
         )
         tdi_projection = gwr.build_tdi(
             TDI_idx=gwr.TDI_map["XYZ"],  # XYZ basis
-            single_link=single_link_response,
+            single_link=single_link_response_static,
             arms_matrix_rescaled=lisa.detector_arms(0.0) / lisa.armlength,
             x_vector=lisa.x(freqs),
         )
@@ -136,7 +136,7 @@ class TestTDI(unittest.TestCase):
         self.assertAlmostEqual(float(jnp.sum(jnp.abs(tdi_projection - save_arr))), 0.0)
         tdi_projection = gwr.build_tdi(
             TDI_idx=gwr.TDI_map["AET"],  # AET basis
-            single_link=single_link_response,
+            single_link=single_link_response_static,
             arms_matrix_rescaled=lisa.detector_arms(0.0) / lisa.armlength,
             x_vector=lisa.x(freqs),
         )
@@ -144,7 +144,7 @@ class TestTDI(unittest.TestCase):
         self.assertAlmostEqual(float(jnp.sum(jnp.abs(tdi_projection - save_arr))), 0.0)
         tdi_projection = gwr.build_tdi(
             TDI_idx=gwr.TDI_map["AE_zeta"],  # AEZ basis
-            single_link=single_link_response,
+            single_link=single_link_response_static,
             arms_matrix_rescaled=lisa.detector_arms(0.0) / lisa.armlength,
             x_vector=lisa.x(freqs),
         )
@@ -152,7 +152,7 @@ class TestTDI(unittest.TestCase):
         self.assertAlmostEqual(float(jnp.sum(jnp.abs(tdi_projection - save_arr))), 0.0)
         tdi_projection = gwr.build_tdi(
             TDI_idx=gwr.TDI_map["AE_Sagnac_zeta"],  # AE_Sagnac_Z basis
-            single_link=single_link_response,
+            single_link=single_link_response_static,
             arms_matrix_rescaled=lisa.detector_arms(0.0) / lisa.armlength,
             x_vector=lisa.x(freqs),
         )
@@ -175,30 +175,30 @@ class TestTDI(unittest.TestCase):
             arms_matrix_rescaled=lisa.detector_arms(0.0) / lisa.armlength,
             polarization_tensor=e1L,
         )
-        xi_k_A = gwr.xi_k_A(
+        xi_k_A_static = gwr.xi_k_A_static(
             arms_matrix_rescaled=lisa.detector_arms(0.0) / lisa.armlength,
             unit_wavevector=unit_vector,
             x_vector=lisa.x(freqs),
             geometrical=geomtrical_factor,
         )
-        single_link_response = gwr.single_link_response(
+        single_link_response_static = gwr.single_link_response_static(
             positions_rescaled=lisa.vertex_positions(0.0) / lisa.armlength,
             arms_matrix_rescaled=lisa.detector_arms(0.0) / lisa.armlength,
             wavevector=unit_vector,
             x_vector=lisa.x(freqs),
-            xi_k_A=xi_k_A,
+            xi_k_A_static=xi_k_A_static,
         )
         arms_matrix_rescaled = lisa.detector_arms(0.0) / lisa.armlength
         x_vector = lisa.x(freqs)
 
         pixel_resolved = gwr.build_tdi(
             TDI_idx=gwr.TDI_map["XYZ"],
-            single_link=single_link_response,
+            single_link=single_link_response_static,
             arms_matrix_rescaled=arms_matrix_rescaled,
             x_vector=x_vector,
         )
 
-        integrated_single_link = jnp.mean(single_link_response, axis=-1)
+        integrated_single_link = jnp.mean(single_link_response_static, axis=-1)
         self.assertEqual(integrated_single_link.ndim, 3)
 
         integrated_projection = gwr.build_tdi(

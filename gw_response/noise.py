@@ -116,7 +116,7 @@ class Noise(object):
             **noise_parameters,
         )
 
-    @functools.partial(jax.jit, static_argnums=(0, 1), static_argnames=("combination",))
+    @functools.partial(jax.jit, static_argnums=(0, 1, 4))
     def get_noise_matrix(
         self,
         det: "Detector",

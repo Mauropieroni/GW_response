@@ -63,9 +63,12 @@ notebook for a full, worked walk-through.
 | `detector.py` | Abstract `Detector` base class |
 | `lisa.py` | `LISA` detector: rigid, Keplerian, and numerical orbits and arm vectors |
 | `polarization.py` | Sky-position wavevector, transverse basis, plus/cross and left/right polarization tensors |
-| `single_link.py` | Single-link response for a static (simultaneous-geometry) arm |
+| `single_link_utils.py` | Geometrical factor and position phase factor shared by the static and retarded single-link pipelines |
+| `single_link_static.py` | Single-link response for a static (simultaneous-geometry) arm |
 | `single_link_retarded.py` | Single-link response for a genuinely asymmetric (retarded) arm |
 | `tdi.py` | Time-delay interferometry combinations (`XYZ`, `AET`, Sagnac, …) |
+| `single_link_geometry.py` | LISA/Taiji one-way-link per-arm retarded/linearized geometry and exact delay-based single-link response |
 | `response.py` | `Response`: linear & quadratic response driver |
+| `response_utils.py` | TDI linear/quadratic response helpers |
 | `noise.py` | `Noise`: test-mass and OMS noise in the TDI basis |
 | `utils.py` | HEALPix `Pixel` helper, orbit-file loading, and shared array/geometry utilities |

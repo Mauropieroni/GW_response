@@ -17,7 +17,7 @@ class TestResponse_LISA(unittest.TestCase):
 
         theta, phi = pixel.theta_pixel, pixel.phi_pixel
         assert theta is not None and phi is not None
-        single_link_response = response.get_single_link_response_fd(
+        single_link_response_static = response.get_single_link_response_fd(
             lisa,
             times_in_years=jnp.array([0.0]),
             theta_array=theta,
@@ -27,11 +27,11 @@ class TestResponse_LISA(unittest.TestCase):
         )
         save_arr = np.load(TEST_DATA_PATH_lisa + "single_link_response_L.npy")
         self.assertAlmostEqual(
-            float(jnp.max(jnp.abs(single_link_response["L"] - save_arr))), 0.0
+            float(jnp.max(jnp.abs(single_link_response_static["L"] - save_arr))), 0.0
         )
         save_arr = np.load(TEST_DATA_PATH_lisa + "single_link_response_R.npy")
         self.assertAlmostEqual(
-            float(jnp.max(jnp.abs(single_link_response["R"] - save_arr))), 0.0
+            float(jnp.max(jnp.abs(single_link_response_static["R"] - save_arr))), 0.0
         )
         linear_integrand = response.get_linear_integrand_fd(
             lisa,
@@ -108,7 +108,7 @@ class TestResponse_LIGO(unittest.TestCase):
         theta, phi = pixel.theta_pixel, pixel.phi_pixel
         assert theta is not None and phi is not None
 
-        single_link_response = response.get_single_link_response_fd(
+        single_link_response_static = response.get_single_link_response_fd(
             ligo,
             times_in_years=jnp.array([0.0]),
             theta_array=theta,
@@ -118,11 +118,11 @@ class TestResponse_LIGO(unittest.TestCase):
         )
         save_arr = np.load(TEST_DATA_PATH_ligo + "single_link_response_L.npy")
         self.assertAlmostEqual(
-            float(jnp.max(jnp.abs(single_link_response["L"] - save_arr))), 0.0
+            float(jnp.max(jnp.abs(single_link_response_static["L"] - save_arr))), 0.0
         )
         save_arr = np.load(TEST_DATA_PATH_ligo + "single_link_response_R.npy")
         self.assertAlmostEqual(
-            float(jnp.max(jnp.abs(single_link_response["R"] - save_arr))), 0.0
+            float(jnp.max(jnp.abs(single_link_response_static["R"] - save_arr))), 0.0
         )
 
         linear_integrand = response.get_linear_integrand_fd(
@@ -155,14 +155,18 @@ class TestResponse_LIGO(unittest.TestCase):
         save_arr = np.load(TEST_DATA_PATH_ligo + "quadratic_response_Michelson_L.npy")
         self.assertAlmostEqual(
             float(
-                jnp.max(jnp.abs(response.quadratic_integrated["Michelson"]["L"] - save_arr))
+                jnp.max(
+                    jnp.abs(response.quadratic_integrated["Michelson"]["L"] - save_arr)
+                )
             ),
             0.0,
         )
         save_arr = np.load(TEST_DATA_PATH_ligo + "quadratic_response_Michelson_R.npy")
         self.assertAlmostEqual(
             float(
-                jnp.max(jnp.abs(response.quadratic_integrated["Michelson"]["R"] - save_arr))
+                jnp.max(
+                    jnp.abs(response.quadratic_integrated["Michelson"]["R"] - save_arr)
+                )
             ),
             0.0,
         )
