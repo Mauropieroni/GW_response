@@ -56,157 +56,9 @@ class TestInstantaneousFrequency(unittest.TestCase):
         )
 
 
-class TestTimeDomainResponseFrozen_LIGO(unittest.TestCase):
-    def test_shapes_and_consistency(self):
-        ligo = gwr.LIGO()
-        response = ligo.response
-        pixel = gwr.Pixel()
-        assert pixel.theta_pixel is not None and pixel.phi_pixel is not None
-        theta, phi = pixel.theta_pixel[:1], pixel.phi_pixel[:1]
-
-        dt = 1.0 / (4 * ligo.fmax)
-        n = 4096
-        response.waveform = gwr.Waveform(
-            strain_td=lambda t, params: (
-                jnp.sin(2 * jnp.pi * 100.0 * t) + 0j,
-                jnp.zeros_like(t) + 0j,
-            )
-        )
-
-        d_t = response.get_response_frozen_td(ligo, 0.0, theta, phi, None, n, dt)
-        self.assertEqual(d_t.shape, (n, 1, 1))
-        self.assertTrue(bool(jnp.all(jnp.isfinite(d_t))))
-
-        # Manual cross-check via the (separately tested) linear_integrand
-        t = jnp.arange(n) * dt
-        h_plus = jnp.sin(2 * jnp.pi * 100.0 * t)
-        h_cross = jnp.zeros(n)
-        freqs = jnp.fft.rfftfreq(n, d=dt)
-        H_plus = gwr.strain_to_frequency_domain(h_plus, dt)
-        H_cross = gwr.strain_to_frequency_domain(h_cross, dt)
-
-        linear = response.get_linear_integrand_fd(
-            ligo, 0.0, theta, phi, freqs, polarization="PC"
-        )
-        R_plus = jnp.moveaxis(linear["P"], 1, -1)
-        R_cross = jnp.moveaxis(linear["C"], 1, -1)
-        expected_f = R_plus * H_plus + R_cross * H_cross
-        expected_t = gwr.frequency_domain_to_time_domain(expected_f, n, dt)
-        expected_t = jnp.moveaxis(expected_t, -1, 0)
-        self.assertAlmostEqual(float(jnp.max(jnp.abs(d_t - expected_t))), 0.0, places=8)
-
-    def test_multiple_times_and_pixels(self):
-        # Each (time, pixel) slice of a batched call should match calling
-        # get_response_frozen_td individually for just that configuration.
-        ligo = gwr.LIGO()
-        response = ligo.response
-        pixel = gwr.Pixel()
-        assert pixel.theta_pixel is not None and pixel.phi_pixel is not None
-        theta, phi = pixel.theta_pixel[:3], pixel.phi_pixel[:3]
-        times = jnp.array([0.0, 0.1])
-
-        dt = 1.0 / (4 * ligo.fmax)
-        n = 512
-        response.waveform = gwr.Waveform(
-            strain_td=lambda t, params: (
-                jnp.sin(2 * jnp.pi * 100.0 * t) + 0j,
-                jnp.zeros_like(t) + 0j,
-            )
-        )
-
-        d_batched = response.get_response_frozen_td(
-            ligo, times, theta, phi, None, n, dt
-        )
-        self.assertEqual(d_batched.shape, (n, 2, 3))
-        self.assertTrue(bool(jnp.all(jnp.isfinite(d_batched))))
-
-        d_single = response.get_response_frozen_td(
-            ligo, times[1:2], theta[2:3], phi[2:3], None, n, dt
-        )
-        self.assertAlmostEqual(
-            float(jnp.max(jnp.abs(d_batched[:, 1, 2] - d_single[:, 0, 0]))),
-            0.0,
-            places=10,
-        )
-
-
-class TestTimeDomainResponseFrozen_LISA(unittest.TestCase):
-    def test_shapes(self):
-        lisa = gwr.LISA()
-        response = lisa.response
-        pixel = gwr.Pixel()
-        assert pixel.theta_pixel is not None and pixel.phi_pixel is not None
-        theta, phi = pixel.theta_pixel[:1], pixel.phi_pixel[:1]
-
-        dt = 10.0
-        n = 2048
-        response.waveform = gwr.Waveform(
-            strain_td=lambda t, params: (
-                jnp.sin(2 * jnp.pi * 1e-2 * t) + 0j,
-                jnp.cos(2 * jnp.pi * 1e-2 * t) + 0j,
-            )
-        )
-
-        d_t = response.get_response_frozen_td(
-            lisa, 0.0, theta, phi, None, n, dt, combination="XYZ"
-        )
-        self.assertEqual(d_t.shape, (n, 1, 3, 1))
-        self.assertTrue(bool(jnp.all(jnp.isfinite(d_t))))
-
-    def test_strain_fd_matches_strain_td(self):
-        # A Waveform with both strain_td and strain_fd set to the same
-        # underlying signal (one exact-FFT of the other, on this method's
-        # own jnp.fft.rfftfreq(n, d=dt) grid) should give the same response
-        # regardless of which path get_response_frozen_td takes -- strain_fd
-        # (used directly, no FFT) should win when both are set.
-        lisa = gwr.LISA()
-        response = lisa.response
-        pixel = gwr.Pixel()
-        assert pixel.theta_pixel is not None and pixel.phi_pixel is not None
-        theta, phi = pixel.theta_pixel[:1], pixel.phi_pixel[:1]
-
-        dt = 10.0
-        n = 2048
-        t_grid = jnp.arange(n) * dt
-        h_plus_td = jnp.sin(2 * jnp.pi * 1e-2 * t_grid)
-        h_cross_td = jnp.cos(2 * jnp.pi * 1e-2 * t_grid)
-        h_f_plus = gwr.strain_to_frequency_domain(h_plus_td, dt)
-        h_f_cross = gwr.strain_to_frequency_domain(h_cross_td, dt)
-
-        response.waveform = gwr.Waveform(
-            strain_td=lambda t, params: (h_plus_td + 0j, h_cross_td + 0j)
-        )
-        d_from_td = response.get_response_frozen_td(
-            lisa, 0.0, theta, phi, None, n, dt, combination="XYZ"
-        )
-
-        response.waveform = gwr.Waveform(
-            strain_fd=lambda f, params: (h_f_plus, h_f_cross)
-        )
-        d_from_fd = response.get_response_frozen_td(
-            lisa, 0.0, theta, phi, None, n, dt, combination="XYZ"
-        )
-
-        self.assertAlmostEqual(
-            float(jnp.max(jnp.abs(d_from_td - d_from_fd))), 0.0, places=10
-        )
-
-    def test_waveform_without_strain_raises(self):
-        lisa = gwr.LISA()
-        response = lisa.response
-        pixel = gwr.Pixel()
-        assert pixel.theta_pixel is not None and pixel.phi_pixel is not None
-        theta, phi = pixel.theta_pixel[:1], pixel.phi_pixel[:1]
-
-        response.waveform = gwr.Waveform()  # neither strain_td nor strain_fd set
-        with self.assertRaises(ValueError):
-            response.get_response_frozen_td(lisa, 0.0, theta, phi, None, 128, 10.0)
-
-
 class TestSingleLinkDelayRetardedSegmentedTD(unittest.TestCase):
     """
-    Regression coverage for Response.get_single_link_response_delay_td (including its
-    frozen-geometry special case, via a constant `times_geometry_years`) and
+    Regression coverage for Response.get_single_link_response_delay_td and
     get_single_link_response_segmented_td, against golden-snapshot fixtures of their
     own output, confirmed exact to machine precision.
     """
@@ -220,13 +72,13 @@ class TestSingleLinkDelayRetardedSegmentedTD(unittest.TestCase):
 
         times = jnp.linspace(0.0, 0.01, 50)
 
-        def amplitude_plus(t, params):
+        def amplitude_plus(t, waveform_params):
             return jnp.asarray(1e-21)
 
-        def amplitude_cross(t, params):
+        def amplitude_cross(t, waveform_params):
             return jnp.asarray(0.5e-21)
 
-        def phase(t, params):
+        def phase(t, waveform_params):
             return 2 * jnp.pi * 1e-2 * t
 
         response.waveform = gwr.Waveform.from_amplitude_phase(
@@ -259,14 +111,14 @@ class TestSingleLinkDelayRetardedSegmentedTD(unittest.TestCase):
 
         times = jnp.linspace(0.0, 0.01, 50)
         waveform_a = gwr.Waveform.from_amplitude_phase(
-            amplitude_plus=lambda t, params: jnp.asarray(1e-21),
-            amplitude_cross=lambda t, params: jnp.asarray(0.5e-21),
-            phase=lambda t, params: jnp.asarray(2 * jnp.pi * 1e-2 * t),
+            amplitude_plus=lambda t, waveform_params: jnp.asarray(1e-21),
+            amplitude_cross=lambda t, waveform_params: jnp.asarray(0.5e-21),
+            phase=lambda t, waveform_params: jnp.asarray(2 * jnp.pi * 1e-2 * t),
         )
         waveform_b = gwr.Waveform.from_amplitude_phase(
-            amplitude_plus=lambda t, params: jnp.asarray(3e-21),
-            amplitude_cross=lambda t, params: jnp.asarray(2e-21),
-            phase=lambda t, params: jnp.asarray(2 * jnp.pi * 3e-2 * t + 0.7),
+            amplitude_plus=lambda t, waveform_params: jnp.asarray(3e-21),
+            amplitude_cross=lambda t, waveform_params: jnp.asarray(2e-21),
+            phase=lambda t, waveform_params: jnp.asarray(2 * jnp.pi * 3e-2 * t + 0.7),
         )
 
         for method_name, kwargs in (
@@ -317,13 +169,13 @@ class TestSingleLinkDelayRetardedSegmentedTD(unittest.TestCase):
 
         times = jnp.linspace(0.0, 0.01, 50)
 
-        def amplitude_plus(t, params):
+        def amplitude_plus(t, waveform_params):
             return jnp.asarray(1e-21)
 
-        def amplitude_cross(t, params):
+        def amplitude_cross(t, waveform_params):
             return jnp.asarray(0.5e-21)
 
-        def phase(t, params):
+        def phase(t, waveform_params):
             return 2 * jnp.pi * 1e-2 * t
 
         response.waveform = gwr.Waveform.from_amplitude_phase(
@@ -359,9 +211,9 @@ class TestSingleLinkDelayRetardedSegmentedTD(unittest.TestCase):
 
 class TestTDIResponseDelayTD(unittest.TestCase):
     """
-    Regression coverage for Response.get_response_delay_td -- the TDI 1.5
-    (unequal but locally-constant arms) time-domain combination, exact for evolving
-    geometry, from Muratore, Vetrugno & Vitale (arXiv:2303.15929, eq. 2.24).
+    Regression coverage for Response.get_response_delay_td -- the TDI 1.5 (unequal
+    but locally-constant arms) and 2.0 time-domain combinations, exact for evolving
+    geometry, from Muratore, Vetrugno & Vitale (arXiv:2303.15929, eqs. 2.24 and 2.23).
     """
 
     def _lisa_with_waveform(self):
@@ -371,13 +223,13 @@ class TestTDIResponseDelayTD(unittest.TestCase):
         assert pixel.theta_pixel is not None and pixel.phi_pixel is not None
         theta, phi = pixel.theta_pixel[:1], pixel.phi_pixel[:1]
 
-        def amplitude_plus(t, params):
+        def amplitude_plus(t, waveform_params):
             return jnp.asarray(1e-21)
 
-        def amplitude_cross(t, params):
+        def amplitude_cross(t, waveform_params):
             return jnp.asarray(0.5e-21)
 
-        def phase(t, params):
+        def phase(t, waveform_params):
             return 2 * jnp.pi * 3e-3 * t
 
         response.waveform = gwr.Waveform.from_amplitude_phase(
@@ -452,6 +304,72 @@ class TestTDIResponseDelayTD(unittest.TestCase):
                 lisa, times, theta, phi, None, combination="not_a_combination"
             )
 
+    def test_unknown_tdi_order_raises(self):
+        lisa, response, theta, phi = self._lisa_with_waveform()
+        times = jnp.linspace(0.0, 0.005, 10)
+        with self.assertRaises(ValueError):
+            response.get_response_delay_td(
+                lisa, times, theta, phi, None, combination="XYZ", tdi_order=1.0
+            )
+
+    def test_tdi2_X_matches_independent_manual_construction(self):
+        # Rebuilds X2 = X(t) - X(t - 2*(T31+T12)) (eq. 2.23a) from scratch
+        # here, using only the already-tested tdi_order=1.5 path and
+        # detector_arms_retarded -- an independent check of
+        # get_response_delay_td's own TDI 2.0 prefactor machinery, not just
+        # a re-run of the same code.
+        lisa, response, theta, phi = self._lisa_with_waveform()
+        times = jnp.linspace(0.0, 0.001, 15)
+
+        _, ltt, _ = lisa.detector_arms_retarded(times, lisa.response.ps)
+        arm_order = (12, 23, 31, 21, 32, 13)
+        ltt_by_arm = {label: ltt[:, i] for i, label in enumerate(arm_order)}
+
+        delay = 2 * (ltt_by_arm[31] + ltt_by_arm[12])
+        shifted_times = times - delay / lisa.ps.yr
+
+        X_now = response.get_response_delay_td(
+            lisa, times, theta, phi, None, combination="XYZ", tdi_order=1.5
+        )[:, 0]
+        X_shifted = response.get_response_delay_td(
+            lisa, shifted_times, theta, phi, None, combination="XYZ", tdi_order=1.5
+        )[:, 0]
+        X2_manual = X_now - X_shifted
+
+        d_t = response.get_response_delay_td(
+            lisa, times, theta, phi, None, combination="XYZ", tdi_order=2.0
+        )
+        X2_from_method = d_t[:, 0]
+
+        self.assertAlmostEqual(
+            float(jnp.max(jnp.abs(X2_manual - X2_from_method))), 0.0, places=10
+        )
+
+    def test_shapes_and_finite_for_tdi_order_2(self):
+        lisa, response, theta, phi = self._lisa_with_waveform()
+        times = jnp.linspace(0.0, 0.001, 15)
+
+        for combination in (
+            "XYZ",
+            "AET",
+            "Sagnac",
+            "AET_Sagnac",
+            "AE_zeta",
+            "AE_Sagnac_zeta",
+        ):
+            with self.subTest(combination=combination):
+                d_t = response.get_response_delay_td(
+                    lisa,
+                    times,
+                    theta,
+                    phi,
+                    None,
+                    combination=combination,
+                    tdi_order=2.0,
+                )
+                self.assertEqual(d_t.shape, (15, 3))
+                self.assertTrue(bool(jnp.all(jnp.isfinite(d_t))))
+
     def test_waveform_not_set_raises(self):
         lisa = gwr.LISA()
         response = lisa.response
@@ -463,6 +381,297 @@ class TestTDIResponseDelayTD(unittest.TestCase):
         response.waveform = None
         with self.assertRaises(ValueError):
             response.get_response_delay_td(lisa, times, theta, phi, None)
+
+
+class TestTDIResponseSegmentedTD(unittest.TestCase):
+    """
+    Regression coverage for Response.get_response_segmented_td -- the TDI 1.5
+    combination built from segment-stacked single-link terms.
+    """
+
+    def _lisa_with_waveform(self):
+        lisa = gwr.LISA()
+        response = lisa.response
+        pixel = gwr.Pixel()
+        assert pixel.theta_pixel is not None and pixel.phi_pixel is not None
+        theta, phi = pixel.theta_pixel[:1], pixel.phi_pixel[:1]
+
+        def amplitude_plus(t, waveform_params):
+            return jnp.asarray(1e-21)
+
+        def amplitude_cross(t, waveform_params):
+            return jnp.asarray(0.5e-21)
+
+        def phase(t, waveform_params):
+            return 2 * jnp.pi * 3e-3 * t
+
+        response.waveform = gwr.Waveform.from_amplitude_phase(
+            amplitude_plus, amplitude_cross, phase
+        )
+        return lisa, response, theta, phi
+
+    def test_zeta_matches_independent_manual_construction(self):
+        # Same independent reconstruction as
+        # TestTDIResponseDelayTD.test_zeta_matches_independent_manual_construction,
+        # but built from get_single_link_response_segmented_td instead -- an
+        # independent check of get_response_segmented_td's own term-table
+        # orchestration, not just a re-run of the same code.
+        lisa, response, theta, phi = self._lisa_with_waveform()
+        times = jnp.linspace(0.0, 0.005, 40)
+        segment_length = 4
+
+        _, ltt, _ = lisa.detector_arms_retarded(times, lisa.response.ps)
+        arm_order = (12, 23, 31, 21, 32, 13)
+        ltt_by_arm = {label: ltt[:, i] for i, label in enumerate(arm_order)}
+
+        def arm_at(shift_labels, arm_label):
+            delay = (
+                sum(ltt_by_arm[label] for label in shift_labels)
+                if shift_labels
+                else 0.0
+            )
+            shifted = times - delay / lisa.ps.yr
+            y = response.get_single_link_response_segmented_td(
+                lisa, shifted, theta, phi, None, segment_length=segment_length
+            )
+            return y[:, arm_order.index(arm_label)]
+
+        zeta_manual = (
+            (arm_at((12,), 31) - arm_at((12,), 32))
+            + (arm_at((23,), 12) - arm_at((23,), 13))
+            + (arm_at((31,), 23) - arm_at((31,), 21))
+        )
+
+        d_t = response.get_response_segmented_td(
+            lisa, times, theta, phi, None, segment_length, combination="AE_zeta"
+        )
+        zeta_from_method = d_t[:, 2]
+
+        self.assertAlmostEqual(
+            float(jnp.max(jnp.abs(zeta_manual - zeta_from_method))), 0.0, places=10
+        )
+
+    def test_shapes_and_finite_for_all_combinations(self):
+        lisa, response, theta, phi = self._lisa_with_waveform()
+        times = jnp.linspace(0.0, 0.005, 30)
+
+        for combination in (
+            "XYZ",
+            "AET",
+            "Sagnac",
+            "AET_Sagnac",
+            "AE_zeta",
+            "AE_Sagnac_zeta",
+        ):
+            with self.subTest(combination=combination):
+                d_t = response.get_response_segmented_td(
+                    lisa, times, theta, phi, None, 10, combination=combination
+                )
+                self.assertEqual(d_t.shape, (30, 3))
+                self.assertTrue(bool(jnp.all(jnp.isfinite(d_t))))
+
+    def test_matches_delay_td_reference(self):
+        # Cross-checks against the exact delay_td path it approximates --
+        # segment_length=10 should already track it closely.
+        lisa, response, theta, phi = self._lisa_with_waveform()
+        times = jnp.linspace(0.0, 0.005, 30)
+
+        segmented = response.get_response_segmented_td(
+            lisa, times, theta, phi, None, 10, combination="XYZ"
+        )
+        delay = response.get_response_delay_td(
+            lisa, times, theta, phi, None, combination="XYZ"
+        )
+        rel_err = float(
+            jnp.max(jnp.abs(segmented - delay)) / jnp.max(jnp.abs(delay))
+        )
+        self.assertLess(rel_err, 1e-4)
+
+    def test_unknown_combination_raises(self):
+        lisa, response, theta, phi = self._lisa_with_waveform()
+        times = jnp.linspace(0.0, 0.005, 10)
+        with self.assertRaises(ValueError):
+            response.get_response_segmented_td(
+                lisa, times, theta, phi, None, 5, combination="not_a_combination"
+            )
+
+    def test_waveform_not_set_raises(self):
+        lisa = gwr.LISA()
+        response = lisa.response
+        pixel = gwr.Pixel()
+        assert pixel.theta_pixel is not None and pixel.phi_pixel is not None
+        theta, phi = pixel.theta_pixel[:1], pixel.phi_pixel[:1]
+        times = jnp.linspace(0.0, 0.005, 10)
+
+        response.waveform = None
+        with self.assertRaises(ValueError):
+            response.get_response_segmented_td(lisa, times, theta, phi, None, 5)
+
+
+class TestGetResponseDispatcher(unittest.TestCase):
+    """
+    Regression coverage for Response.get_response -- a thin dispatcher, so each
+    case checks it reproduces the direct call to the underlying method exactly.
+    """
+
+    def _lisa_with_waveform(self):
+        lisa = gwr.LISA()
+        response = lisa.response
+        pixel = gwr.Pixel()
+        assert pixel.theta_pixel is not None and pixel.phi_pixel is not None
+        theta, phi = pixel.theta_pixel[:1], pixel.phi_pixel[:1]
+
+        def amplitude_plus(t, waveform_params):
+            return jnp.asarray(1e-21)
+
+        def amplitude_cross(t, waveform_params):
+            return jnp.asarray(0.5e-21)
+
+        def phase(t, waveform_params):
+            return 2 * jnp.pi * 3e-3 * t
+
+        response.waveform = gwr.Waveform.from_amplitude_phase(
+            amplitude_plus, amplitude_cross, phase
+        )
+        return lisa, response, theta, phi
+
+    def test_td_delay_matches_direct_call(self):
+        lisa, response, theta, phi = self._lisa_with_waveform()
+        times = jnp.linspace(0.0, 0.001, 15)
+
+        via_dispatcher = response.get_response(
+            lisa,
+            theta,
+            phi,
+            None,
+            which_domain="TD",
+            which_TDI="AET",
+            TDI_order=2.0,
+            times_in_years=times,
+        )
+        direct = response.get_response_delay_td(
+            lisa, times, theta, phi, None, combination="AET", tdi_order=2.0
+        )
+        self.assertAlmostEqual(
+            float(jnp.max(jnp.abs(via_dispatcher - direct))), 0.0, places=12
+        )
+
+    def test_td_segmented_matches_direct_call(self):
+        lisa, response, theta, phi = self._lisa_with_waveform()
+        times = jnp.linspace(0.0, 0.001, 20)
+
+        via_dispatcher = response.get_response(
+            lisa,
+            theta,
+            phi,
+            None,
+            which_domain="TD",
+            which_method="segmented",
+            which_TDI="AET",
+            times_in_years=times,
+            segment_length=5,
+        )
+        direct = response.get_response_segmented_td(
+            lisa, times, theta, phi, None, 5, combination="AET"
+        )
+        self.assertAlmostEqual(
+            float(jnp.max(jnp.abs(via_dispatcher - direct))), 0.0, places=12
+        )
+
+    def test_segmented_missing_segment_length_raises(self):
+        lisa, response, theta, phi = self._lisa_with_waveform()
+        times = jnp.linspace(0.0, 0.001, 15)
+        with self.assertRaises(ValueError):
+            response.get_response(
+                lisa,
+                theta,
+                phi,
+                None,
+                which_domain="TD",
+                which_method="segmented",
+                times_in_years=times,
+            )
+
+    def test_segmented_with_tdi_order_2_raises(self):
+        lisa, response, theta, phi = self._lisa_with_waveform()
+        times = jnp.linspace(0.0, 0.001, 15)
+        with self.assertRaises(ValueError):
+            response.get_response(
+                lisa,
+                theta,
+                phi,
+                None,
+                which_domain="TD",
+                which_method="segmented",
+                times_in_years=times,
+                segment_length=5,
+                TDI_order=2.0,
+            )
+
+    def test_unknown_which_method_raises(self):
+        lisa, response, theta, phi = self._lisa_with_waveform()
+        times = jnp.linspace(0.0, 0.001, 15)
+        with self.assertRaises(ValueError):
+            response.get_response(
+                lisa,
+                theta,
+                phi,
+                None,
+                which_domain="TD",
+                which_method="not_a_method",
+                times_in_years=times,
+            )
+
+    def test_fd_matches_direct_call(self):
+        lisa = gwr.LISA()
+        response = lisa.response
+        pixel = gwr.Pixel()
+        assert pixel.theta_pixel is not None and pixel.phi_pixel is not None
+        theta, phi = pixel.theta_pixel[:1], pixel.phi_pixel[:1]
+
+        freqs = jnp.logspace(-4, -1, 50)
+        h_f_plus = jnp.ones_like(freqs, dtype=complex) * 1e-21
+        h_f_cross = jnp.ones_like(freqs, dtype=complex) * 0.5e-21
+        response.waveform = gwr.Waveform(
+            strain_fd=lambda f, waveform_params: (h_f_plus, h_f_cross)
+        )
+
+        via_dispatcher = response.get_response(
+            lisa,
+            theta,
+            phi,
+            None,
+            which_domain="FD",
+            which_TDI="XYZ",
+            times_in_years=0.0,
+            frequency_array=freqs,
+        )
+        direct = response.get_response_fd(
+            lisa, 0.0, theta, phi, None, freqs, combination="XYZ"
+        )
+        self.assertAlmostEqual(
+            float(jnp.max(jnp.abs(via_dispatcher - direct))), 0.0, places=12
+        )
+
+    def test_missing_required_args_raise(self):
+        lisa, response, theta, phi = self._lisa_with_waveform()
+        with self.assertRaises(ValueError):
+            response.get_response(lisa, theta, phi, None, which_domain="TD")
+        with self.assertRaises(ValueError):
+            response.get_response(lisa, theta, phi, None, which_domain="FD")
+
+    def test_unknown_which_domain_raises(self):
+        lisa, response, theta, phi = self._lisa_with_waveform()
+        times = jnp.linspace(0.0, 0.001, 15)
+        with self.assertRaises(ValueError):
+            response.get_response(
+                lisa,
+                theta,
+                phi,
+                None,
+                which_domain="not_a_domain",
+                times_in_years=times,
+            )
 
 
 if __name__ == "__main__":

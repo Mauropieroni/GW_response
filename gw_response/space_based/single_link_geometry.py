@@ -7,7 +7,7 @@ from typing import Any, Callable, TYPE_CHECKING
 from jax.typing import ArrayLike
 
 # Local imports
-from gw_response.constants import BasisTransformations, PhysicalConstants
+from gw_response.constants import PhysicalConstants
 from gw_response.polarization import pc_tensors_and_signed_wavevector
 from gw_response.response_utils import contract_with_h
 from gw_response.single_link_utils import geometrical_factor
@@ -191,7 +191,7 @@ def single_link_response_linearized(
     theta: ArrayLike,
     phi: ArrayLike,
     strain_td: Callable[[jax.Array, Any], tuple[jax.Array, jax.Array]],
-    params: Any,
+    waveform_params: Any,
     wavevector_sign: ArrayLike,
     final_factor: ArrayLike,
 ) -> jax.Array:
@@ -217,10 +217,10 @@ def single_link_response_linearized(
             from, in radians.
         phi (ArrayLike): Longitude of the single sky position the signal arrives from,
             in radians.
-        strain_td (Callable): Maps a time, in seconds, and `params` to the complex
-            ``(h_plus, h_cross)`` quadratures at that time -- see
+        strain_td (Callable): Maps a time, in seconds, and `waveform_params` to the
+            complex ``(h_plus, h_cross)`` quadratures at that time -- see
             :class:`gw_response.response_utils.Waveform`.
-        params (Any): Source parameters passed through to `strain_td`.
+        waveform_params (Any): Source parameters passed through to `strain_td`.
         wavevector_sign (ArrayLike): Multiplies `unit_vec(theta, phi)`.
         final_factor (ArrayLike): Complex factor applied to the result just before
             taking its real part.
@@ -245,24 +245,23 @@ def single_link_response_linearized(
     t_rec_shifted = t_phase_seconds[:, None] - shift_rec  # (time, arms)
     t_emi_shifted = t_phase_seconds[:, None] - shift_emi
 
-    h_plus_emi, h_cross_emi = strain_td(t_emi_shifted, params)
-    h_plus_rec, h_cross_rec = strain_td(t_rec_shifted, params)
+    h_plus_emi, h_cross_emi = strain_td(t_emi_shifted, waveform_params)
+    h_plus_rec, h_cross_rec = strain_td(t_rec_shifted, waveform_params)
     termplus = h_plus_emi - h_plus_rec
     termcross = h_cross_emi - h_cross_rec
     y_complex = contract_with_h(xiplus, xicross, termplus, termcross) / denom
     return jnp.real(y_complex * final_factor)
 
 
-@partial(jax.jit, static_argnums=(0, 5, 8))
+@partial(jax.jit, static_argnums=(0, 5, 7))
 def single_link_response_delay_td(
     det: "Detector",
     ps: PhysicalConstants,
-    times_in_years: ArrayLike,
+    times_in_years: jax.Array,
     theta: ArrayLike,
     phi: ArrayLike,
     strain_td: Callable[[jax.Array, Any], tuple[jax.Array, jax.Array]],
-    params: Any,
-    times_geometry_years: ArrayLike | None = None,
+    waveform_params: Any,
     freeze_geometry: bool = False,
     wavevector_sign: ArrayLike = 1.0,
     final_factor: ArrayLike = 1j,
@@ -283,20 +282,16 @@ def single_link_response_delay_td(
         det (Detector): The detector (e.g. LISA, Taiji) the response is computed for.
         ps (PhysicalConstants): Physical constants used to convert between distance and
             time units.
-        times_in_years (ArrayLike): Reception time(s), in years, at which to evaluate
-            the response.
+        times_in_years (ArrayLike): Reception time(s), in years, at which both the
+            waveform's phase and the detector's geometry are evaluated.
         theta (ArrayLike): Colatitude of the single sky position the signal arrives
             from, in radians.
         phi (ArrayLike): Longitude of the single sky position the signal arrives from,
             in radians.
-        strain_td (Callable): Maps a time, in seconds, and `params` to the complex
-            ``(h_plus, h_cross)`` quadratures at that time -- see
+        strain_td (Callable): Maps a time, in seconds, and `waveform_params` to the
+            complex ``(h_plus, h_cross)`` quadratures at that time -- see
             :class:`gw_response.response_utils.Waveform`.
-        params (Any): Source parameters passed through to `strain_td`.
-        times_geometry_years (ArrayLike, optional): Time(s), in years, at which to
-            evaluate the *detector geometry* (broadcast against `times_in_years`, which
-            always supplies the *phase*/reception time). Defaults to `times_in_years`
-            itself.
+        waveform_params (Any): Source parameters passed through to `strain_td`.
         freeze_geometry (bool): If True, also evaluates each emitter's *position* at the
             same reception time as the receiver, instead of backdating it by the
             light-travel time. The light-travel-time delay in the *phase* argument is
@@ -319,16 +314,7 @@ def single_link_response_delay_td(
             "single_link_response_delay_td requires a single sky position."
         )
 
-    times_in_years = jnp.atleast_1d(times_in_years)
     times_phase_seconds = times_in_years * ps.yr
-    times_geometry_years = (
-        times_in_years
-        if times_geometry_years is None
-        else jnp.atleast_1d(times_geometry_years)
-    )
-    times_geometry_years, times_phase_seconds = jnp.broadcast_arrays(
-        times_geometry_years, times_phase_seconds
-    )
 
     wavevector, p_plus, p_cross = pc_tensors_and_signed_wavevector(
         theta, phi, wavevector_sign
@@ -337,259 +323,106 @@ def single_link_response_delay_td(
     p_cross_mat = p_cross[0]
     k = wavevector[:, 0]  # (3,), single sky position
 
-    def all_arms_at_sample(
-        t_geometry_years: ArrayLike, t_rec_seconds: ArrayLike
-    ) -> jax.Array:
+    def all_arms_at_sample(t_years: jax.Array, t_rec_seconds: jax.Array) -> jax.Array:
         n_vec, shift_rec, shift_emi, denom = all_arms_geometry(
-            det, ps, k, t_geometry_years, freeze_geometry
+            det, ps, k, t_years, freeze_geometry
         )
         xiplus, xicross = _xi_plus_cross(n_vec, p_plus_mat, p_cross_mat)
 
-        t_emi_shifted = jnp.asarray(t_rec_seconds - shift_emi)  # (arms,)
-        t_rec_shifted = jnp.asarray(t_rec_seconds - shift_rec)  # (arms,)
-        h_plus_emi, h_cross_emi = strain_td(t_emi_shifted, params)
-        h_plus_rec, h_cross_rec = strain_td(t_rec_shifted, params)
+        t_emi_shifted = t_rec_seconds - shift_emi  # (arms,)
+        t_rec_shifted = t_rec_seconds - shift_rec  # (arms,)
+        h_plus_emi, h_cross_emi = strain_td(t_emi_shifted, waveform_params)
+        h_plus_rec, h_cross_rec = strain_td(t_rec_shifted, waveform_params)
         termplus = h_plus_emi - h_plus_rec
         termcross = h_cross_emi - h_cross_rec
         signal = contract_with_h(xiplus, xicross, termplus, termcross)
         return signal / denom
 
     y_complex = jax.vmap(all_arms_at_sample)(
-        times_geometry_years, times_phase_seconds
+        times_in_years, times_phase_seconds
     )  # (time, arms)
     return jnp.real(y_complex * final_factor)  # (time, arms)
 
 
-# TDI 1.5 (unequal but locally-constant arms) time-domain combination
-# formulas, from Muratore, Vetrugno & Vitale (arXiv:2303.15929), eq. (2.24),
-# each expressed as a tuple of (sign, arm_label, delay_arm_labels) terms: a
-# term contributes ``sign * eta_{arm_label}(t - sum(ltt[d] for d in
-# delay_arm_labels))``, i.e. a delay operator "D_ij" becomes a time shift by
-# arm ij's own (current) light-travel-time, composed by summing when several
-# delays are nested. `Y`/`Z` and `beta`/`gamma` are cyclic satellite
-# permutations of `X`/`alpha` (see :func:`_cyclic_permute_terms`); `zeta` (the
-# fully symmetric Sagnac combination) has no such siblings. A genuinely
-# evolving geometry -- unlike the frequency-domain `tdi_XYZ_matrix`/
-# `tdi_Sagnac_matrix`, which assume one arm length per (undirected) arm pair
-# -- means `X` here can differ from those by using the arm's own two
-# (possibly unequal) directional light-travel-times directly, since it's
-# built from exact per-arm data via :func:`single_link_response_delay_td`.
-_X_TERMS = (
-    (1, 12, ()),
-    (1, 21, (12,)),
-    (-1, 12, (13, 31)),
-    (-1, 21, (13, 31, 12)),
-    (1, 13, (12, 21)),
-    (1, 31, (12, 21, 13)),
-    (-1, 13, ()),
-    (-1, 31, (13,)),
-)
-_ALPHA_TERMS = (
-    (1, 12, ()),
-    (1, 23, (12,)),
-    (1, 31, (12, 23)),
-    (-1, 13, ()),
-    (-1, 32, (13,)),
-    (-1, 21, (13, 32)),
-)
-_ZETA_TERMS = (
-    (1, 31, (12,)),
-    (-1, 32, (12,)),
-    (1, 12, (23,)),
-    (-1, 13, (23,)),
-    (1, 23, (31,)),
-    (-1, 21, (31,)),
-)
-
-_CYCLIC_SATELLITE = {1: 2, 2: 3, 3: 1}
-
-
-def _cyclic_permute_terms(
-    terms: tuple[tuple[int, int, tuple[int, ...]], ...], shift: int
-) -> tuple[tuple[int, int, tuple[int, ...]], ...]:
-    """Cyclically relabels satellites (1->2->3->1, applied `shift` times) in every
-    arm label of `terms` -- builds `Y`/`Z` from `X` (or `beta`/`gamma` from `alpha`)."""
-
-    def relabel(label: int) -> int:
-        d1, d2 = label // 10, label % 10
-        for _ in range(shift % 3):
-            d1, d2 = _CYCLIC_SATELLITE[d1], _CYCLIC_SATELLITE[d2]
-        return d1 * 10 + d2
-
-    return tuple(
-        (sign, relabel(arm), tuple(relabel(d) for d in delays))
-        for sign, arm, delays in terms
-    )
-
-
-def _tdi_channel_delay_td(
-    terms: tuple[tuple[int, int, tuple[int, ...]], ...],
+def single_link_response_segmented_td(
     det: "Detector",
     ps: PhysicalConstants,
     times_in_years: jax.Array,
     theta: ArrayLike,
     phi: ArrayLike,
     strain_td: Callable[[jax.Array, Any], tuple[jax.Array, jax.Array]],
-    params: Any,
-    ltt_by_arm: dict[int, jax.Array],
-    wavevector_sign: ArrayLike,
-    final_factor: ArrayLike,
-) -> jax.Array:
-    """
-    Evaluates one TDI channel from `terms`: for each term, shifts `times_in_years` by
-    the term's own cumulative delay (built from `ltt_by_arm`, each arm's current
-    light-travel-time) and calls :func:`single_link_response_delay_td` (reusing its
-    exact per-arm evaluation and geometry), picking out just that term's arm and
-    accumulating with its sign. `final_factor`/`jnp.real` are applied per term inside
-    `single_link_response_delay_td`; since `Re` is linear over the (real) signs summed
-    here, this is exactly equivalent to combining the complex per-arm terms first.
-
-    Returns:
-        jax.Array: shape (time,).
-    """
-    channel = jnp.zeros_like(times_in_years)
-    for sign, arm_label, delay_labels in terms:
-        if delay_labels:
-            delay_seconds = sum(ltt_by_arm[label] for label in delay_labels)
-            shifted_times = times_in_years - delay_seconds / ps.yr
-        else:
-            shifted_times = times_in_years
-        y_all_arms = single_link_response_delay_td(
-            det,
-            ps,
-            shifted_times,
-            theta,
-            phi,
-            strain_td,
-            params,
-            wavevector_sign=wavevector_sign,
-            final_factor=final_factor,
-        )
-        arm_idx = _SINGLE_LINK_ARM_LABELS.index(arm_label)
-        channel = channel + sign * y_all_arms[:, arm_idx]
-    return channel
-
-
-def tdi_response_delay_td(
-    det: "Detector",
-    ps: PhysicalConstants,
-    times_in_years: ArrayLike,
-    theta: ArrayLike,
-    phi: ArrayLike,
-    strain_td: Callable[[jax.Array, Any], tuple[jax.Array, jax.Array]],
-    params: Any,
-    combination: str = "XYZ",
+    waveform_params: Any,
+    segment_length: int,
     wavevector_sign: ArrayLike = 1.0,
     final_factor: ArrayLike = 1j,
 ) -> jax.Array:
     """
-    TDI 1.5 (unequal but locally-constant arms) time-domain response for a LISA-like
-    constellation, computed exactly for genuinely evolving geometry -- reuses
-    :func:`single_link_response_delay_td` for each combination term's own (shifted)
-    exact single-link evaluation and :meth:`gw_response.detector.Detector.
-    detector_arms_retarded` for the light-travel-times the delay operators need, rather
-    than any new geometry code. See the module-level comment above :data:`_X_TERMS` for
-    the delay-operator convention and the Muratore, Vetrugno & Vitale reference
-    (arXiv:2303.15929, eq. 2.24) this implements. Backs
-    ``Response.get_response_delay_td``.
+    Single-link (not TDI-combined) response for evolving detector geometry, via
+    segment-stacking: the full duration is split into short chunks, each evaluated as a
+    first-order Taylor expansion of the exact delay formula
+    (:func:`single_link_response_delay_td`) around that chunk's own midpoint (one
+    autodiff call per chunk, via :func:`per_arm_linearized_geometry`, instead of one
+    `det.vertex_positions` evaluation per sample). The error shrinks *quadratically*
+    with `segment_length` and is *local* to each segment (doesn't accumulate across
+    segments) -- see ``examples/compare_with_lisagwresponse.ipynb`` for the numerical
+    scaling. `segment_length = 1` is allowed and reproduces
+    :func:`single_link_response_delay_td` sample by sample. Backs
+    ``Response.get_single_link_response_segmented_td``.
 
     Args:
-        det (Detector): The detector (e.g. LISA, Taiji) the response is computed for.
-        ps (PhysicalConstants): Physical constants used to convert between distance and
-            time units.
-        times_in_years (ArrayLike): Reception time(s), in years, at which to evaluate
-            the response.
+        det (Detector): The detector (e.g. LISA) the response is computed for.
+        ps (PhysicalConstants): Physical constants (`light_speed`, `yr`).
+        times_in_years (jax.Array): Time(s), in years, uniformly spaced.
         theta (ArrayLike): Colatitude of the single sky position the signal arrives
             from, in radians.
         phi (ArrayLike): Longitude of the single sky position the signal arrives from,
             in radians.
-        strain_td (Callable): Maps a time, in seconds, and `params` to the complex
-            ``(h_plus, h_cross)`` quadratures at that time -- see
+        strain_td (Callable): Maps a time, in seconds, and `waveform_params` to the
+            complex ``(h_plus, h_cross)`` quadratures at that time -- see
             :class:`gw_response.response_utils.Waveform`.
-        params (Any): Source parameters passed through to `strain_td`.
-        combination (str, optional): One of "XYZ", "AET", "Sagnac", "AET_Sagnac",
-            "AE_zeta", "AE_Sagnac_zeta" (matching
-            :data:`gw_response.space_based.tdi.TDI_map`'s keys). Default is "XYZ".
+        waveform_params (Any): Source parameters passed through to `strain_td`.
+        segment_length (int): Number of samples per segment; must evenly divide
+            `times_in_years`'s length.
         wavevector_sign (ArrayLike): Multiplies `unit_vec(theta, phi)`; see
             :func:`single_link_response_delay_td`.
-        final_factor (ArrayLike): Complex factor applied to each term's result just
+        final_factor (ArrayLike): Complex factor applied to each segment's result just
             before taking its real part; see :func:`single_link_response_delay_td`.
 
     Returns:
-        jax.Array: The real TDI-combined time-domain response, with shape (time,
-            channels=3).
+        jax.Array: shape (time, arms=6), arm order :data:`_SINGLE_LINK_ARM_LABELS`.
 
     Raises:
-        ValueError: If `combination` isn't one of the supported names.
+        ValueError: If `segment_length` doesn't evenly divide the number of samples.
     """
-    times_in_years = jnp.atleast_1d(times_in_years)
-    _, ltt, _ = det.detector_arms_retarded(times_in_years, ps)  # (time, arms)
-    ltt_by_arm = {
-        label: ltt[:, i] for i, label in enumerate(_SINGLE_LINK_ARM_LABELS)
-    }
-
-    def channel_group(base_terms: tuple) -> jax.Array:
-        return jnp.stack(
-            [
-                _tdi_channel_delay_td(
-                    _cyclic_permute_terms(base_terms, shift),
-                    det,
-                    ps,
-                    times_in_years,
-                    theta,
-                    phi,
-                    strain_td,
-                    params,
-                    ltt_by_arm,
-                    wavevector_sign,
-                    final_factor,
-                )
-                for shift in range(3)
-            ],
-            axis=0,
-        )  # (3, time)
-
-    def zeta_channel() -> jax.Array:
-        return _tdi_channel_delay_td(
-            _ZETA_TERMS,
-            det,
-            ps,
-            times_in_years,
-            theta,
-            phi,
-            strain_td,
-            params,
-            ltt_by_arm,
-            wavevector_sign,
-            final_factor,
-        )  # (time,)
-
-    xyz_to_aet = BasisTransformations().XYZ_to_AET
-
-    if combination in ("XYZ", "AET", "AE_zeta"):
-        xyz = channel_group(_X_TERMS)
-        if combination == "XYZ":
-            result = xyz
-        else:
-            aet = xyz_to_aet @ xyz
-            result = aet if combination == "AET" else jnp.concatenate(
-                [aet[:2], zeta_channel()[None]], axis=0
-            )
-    elif combination in ("Sagnac", "AET_Sagnac", "AE_Sagnac_zeta"):
-        sagnac = channel_group(_ALPHA_TERMS)
-        if combination == "Sagnac":
-            result = sagnac
-        else:
-            aet_sagnac = xyz_to_aet @ sagnac
-            result = (
-                aet_sagnac
-                if combination == "AET_Sagnac"
-                else jnp.concatenate([aet_sagnac[:2], zeta_channel()[None]], axis=0)
-            )
-    else:
+    n = times_in_years.shape[-1]
+    if n % segment_length != 0:
         raise ValueError(
-            f"Unknown TDI combination '{combination}'; expected one of 'XYZ', "
-            "'AET', 'Sagnac', 'AET_Sagnac', 'AE_zeta', 'AE_Sagnac_zeta'."
+            f"times_in_years length ({n}) must be a multiple of "
+            f"segment_length ({segment_length})."
         )
+    n_segments = n // segment_length
 
-    return jnp.moveaxis(result, -1, 0)  # (time, channels=3)
+    times_seconds = times_in_years * ps.yr
+    times_years_segments = times_in_years.reshape(n_segments, segment_length)
+    times_seconds_segments = times_seconds.reshape(n_segments, segment_length)
+    t_ref_years = times_years_segments[:, segment_length // 2]
+    t_ref_seconds = times_seconds_segments[:, segment_length // 2]
+
+    one_segment = partial(
+        single_link_response_linearized,
+        det,
+        ps,
+        theta=theta,
+        phi=phi,
+        strain_td=strain_td,
+        waveform_params=waveform_params,
+        wavevector_sign=wavevector_sign,
+        final_factor=final_factor,
+    )
+
+    # (segments, segment_length, arms), already in time-major order
+    y_segments = jax.vmap(one_segment)(
+        t_ref_years, t_ref_seconds, times_seconds_segments
+    )
+    n_arms = y_segments.shape[-1]
+    return y_segments.reshape(n, n_arms)

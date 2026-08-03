@@ -170,31 +170,30 @@ class Waveform:
     Bundles a waveform as callables returning both polarizations at once, given a time/
     frequency and the source parameters -- matching how waveform models actually work
     (e.g. `ripplegw`'s `model(frequency, params) -> {"p": h_plus(f), "c": h_cross(f)}`),
-    rather than recomputing shared amplitude/phase evolution twice. Taking `params` as
-    its own argument (rather than baking specific values into the callable via a
-    closure) lets `Response`'s methods stay jit-compiled once and reused across many
-    parameter values -- e.g. the repeated likelihood evaluations of an inference run --
-    instead of retracing per call. `strain_td`/`strain_fd` could interpolate a
+    rather than recomputing shared amplitude/phase evolution twice. Taking
+    `waveform_params` as its own argument (rather than baking specific values into the
+    callable via a closure) lets `Response`'s methods stay jit-compiled once and reused
+    across many parameter values -- e.g. the repeated likelihood evaluations of an
+    inference run -- instead of retracing per call. `strain_td`/`strain_fd` could
+    interpolate a
     densely-sampled model output (see ``examples/ripple_interface_prototype.py``) or be
     any other scalar-evaluable model. Attach one to `Response.waveform` so its methods
     don't need it passed again at every call.
 
     A model native to one domain need only set that one field -- callers that need the
-    other domain (e.g. :meth:`Response.get_response_frozen_td`, which prefers
-    `strain_fd` directly but falls back to FFT-ing `strain_td` if that's all that's set)
-    handle deriving it themselves; `Waveform` doesn't do that conversion itself, since
-    it would need a sample grid (`n`, `dt`) that isn't known until call time.
+    other domain handle deriving it themselves; `Waveform` doesn't do that conversion
+    itself, since it would need a sample grid (`n`, `dt`) that isn't known until call
+    time.
 
     Attributes:
         strain_td (Callable, optional): Maps a time, in seconds, and the source
             parameters to the complex ``(h_plus, h_cross)`` quadratures at that time.
             Needed by the single-link methods that evaluate the waveform at run-time-
-            determined (retarded) times (`get_single_link_response_delay_td` --
-            including its frozen-geometry special case, see that method's docstring --
-            and `get_single_link_response_segmented_td`).
+            determined (retarded) times (`get_single_link_response_delay_td` and
+            `get_single_link_response_segmented_td`).
         strain_fd (Callable, optional): Maps a frequency, in Hz, and the source
             parameters to the complex ``(h_f_plus, h_f_cross)`` quadratures at that
-            frequency. Used directly (no FFT) by `get_response_frozen_td` when set.
+            frequency. Used directly (no FFT) by `Response.get_response_fd`.
     """
 
     strain_td: Callable[[jax.Array, Any], tuple[jax.Array, jax.Array]] | None = None
@@ -215,9 +214,9 @@ class Waveform:
         the class docstring).
         """
         return cls(
-            strain_td=lambda tau, params: h_from_amplitudes_phase(
-                amplitude_plus(tau, params),
-                amplitude_cross(tau, params),
-                phase(tau, params),
+            strain_td=lambda tau, waveform_params: h_from_amplitudes_phase(
+                amplitude_plus(tau, waveform_params),
+                amplitude_cross(tau, waveform_params),
+                phase(tau, waveform_params),
             )
         )

@@ -5,7 +5,7 @@ from functools import partial
 import jax
 import jax.numpy as jnp
 from dataclasses import field
-from typing import Any, Callable, TYPE_CHECKING
+from typing import Any, TYPE_CHECKING
 
 from jax.typing import ArrayLike
 
@@ -19,13 +19,12 @@ from gw_response.single_link_retarded import get_single_link_response_retarded
 from gw_response.single_link_utils import get_single_link_response_long_wavelength
 from gw_response.space_based.single_link_geometry import (
     per_arm_retarded_geometry_rescaled,
-    single_link_response_linearized,
     single_link_response_delay_td,
-    tdi_response_delay_td,
+    single_link_response_segmented_td,
 )
-from gw_response.FFT_utils import (
-    strain_to_frequency_domain,
-    frequency_domain_to_time_domain,
+from gw_response.space_based.tdi import (
+    tdi_response_delay_td,
+    tdi_response_segmented_td,
 )
 
 if TYPE_CHECKING:
@@ -36,6 +35,10 @@ if TYPE_CHECKING:
 class Response(object):
     """
     Generic class to handle GW response computations for any Detector (e.g. LISA, LIGO).
+    `get_response` is the high-level entry point for projecting :attr:`waveform` onto a
+    detector's readout channel(s); the many `get_*_td`/`get_*_fd` methods it delegates
+    to (and the more granular FD-only integrand methods used by `compute_detector`) can
+    also be called directly for finer control.
 
     Identity-based `__hash__`/`__eq__` let `self` be a static `jax.jit` argument below,
     so each `get_*` method traces to one XLA program instead of stitching together
@@ -71,6 +74,136 @@ class Response(object):
 
     def __eq__(self, other: object) -> bool:
         return self is other
+
+    def get_response(
+        self,
+        det: "Detector",
+        theta: ArrayLike,
+        phi: ArrayLike,
+        waveform_params: Any,
+        which_domain: str = "TD",
+        which_method: str = "delay",
+        which_TDI: str | None = None,
+        TDI_order: float = 1.5,
+        times_in_years: ArrayLike | None = None,
+        frequency_array: ArrayLike | None = None,
+        segment_length: int | None = None,
+        wavevector_sign: ArrayLike = 1.0,
+        final_factor: ArrayLike = 1j,
+        polarization: str = "PC",
+    ) -> jax.Array:
+        """
+        High-level entry point: projects :attr:`waveform` (set beforehand) onto a
+        detector's readout channel(s), in whichever domain/method/TDI combination is
+        requested, by delegating to the specific worker method below -- see that
+        method's own docstring for the full derivation/conventions. `which_domain="TD"`
+        is exact for evolving geometry (see :meth:`get_response_delay_td`) or, via
+        `which_method="segmented"`, faster and not much less accurate (see
+        :meth:`get_response_segmented_td`); `which_domain="FD"` is natively
+        frequency-domain (see :meth:`get_response_fd`).
+
+        Args:
+            det (Detector): The detector (e.g. LISA, LIGO) the response is computed for.
+            theta (ArrayLike): Colatitude(s) of the sky position(s), in radians.
+            phi (ArrayLike): Longitude(s) of the sky position(s), in radians.
+            waveform_params (Any): Source parameters passed through to
+                `waveform.strain_td`/`waveform.strain_fd`.
+            which_domain (str, optional): "TD" or "FD". Default is "TD".
+            which_method (str, optional): "delay" or "segmented"; only used for
+                `which_domain="TD"`. Default is "delay".
+            which_TDI (str, optional): Name of the readout combination (e.g. a TDI
+                variable like "XYZ"/"AET" for LISA, or "Michelson" for LIGO). Defaults
+                to ``det.default_combination``.
+            TDI_order (float, optional): 1.5 or 2.0; only used for
+                `which_method="delay"` -- see :meth:`get_response_delay_td`.
+                `which_method="segmented"` only supports 1.5. Default is 1.5.
+            times_in_years (ArrayLike, optional): Time(s), in years -- required for both
+                `which_domain="TD"` and `which_domain="FD"` (for the latter, the single
+                time the detector configuration is frozen at).
+            frequency_array (ArrayLike, optional): Frequency values, in Hz -- required
+                for `which_domain="FD"`.
+            segment_length (int, optional): Number of samples per segment; required for
+                `which_method="segmented"` -- see :meth:`get_response_segmented_td`.
+            wavevector_sign (ArrayLike): see :meth:`get_response_delay_td`. Only used
+                for `which_domain="TD"`.
+            final_factor (ArrayLike): see :meth:`get_response_delay_td`. Only used for
+                `which_domain="TD"`.
+            polarization (str, optional): "PC" or "LR". Only used for `which_domain=
+                "FD"`. Default is "PC".
+
+        Returns:
+            jax.Array: The response, with shape and domain depending on
+                `which_domain` -- see the delegated method's own docstring.
+
+        Raises:
+            ValueError: If `which_domain`/`which_method` isn't recognized, or a
+                required argument for the selected domain/method is missing, or
+                `which_method="segmented"` is combined with `TDI_order=2.0`.
+        """
+        combination = which_TDI or det.default_combination
+
+        if which_domain == "TD":
+            if times_in_years is None:
+                raise ValueError(
+                    "get_response requires times_in_years for which_domain='TD'."
+                )
+            if which_method == "delay":
+                return self.get_response_delay_td(
+                    det,
+                    times_in_years,
+                    theta,
+                    phi,
+                    waveform_params,
+                    combination=combination,
+                    tdi_order=TDI_order,
+                    wavevector_sign=wavevector_sign,
+                    final_factor=final_factor,
+                )
+            if which_method == "segmented":
+                if segment_length is None:
+                    raise ValueError(
+                        "get_response requires segment_length for "
+                        "which_method='segmented'."
+                    )
+                if TDI_order != 1.5:
+                    raise ValueError(
+                        "get_response only supports TDI_order=1.5 for "
+                        "which_method='segmented'."
+                    )
+                return self.get_response_segmented_td(
+                    det,
+                    times_in_years,
+                    theta,
+                    phi,
+                    waveform_params,
+                    segment_length,
+                    combination=combination,
+                    wavevector_sign=wavevector_sign,
+                    final_factor=final_factor,
+                )
+            raise ValueError(
+                f"Unknown which_method '{which_method}'; expected 'delay' or "
+                "'segmented'."
+            )
+        if which_domain == "FD":
+            if times_in_years is None or frequency_array is None:
+                raise ValueError(
+                    "get_response requires times_in_years and frequency_array for "
+                    "which_domain='FD'."
+                )
+            return self.get_response_fd(
+                det,
+                times_in_years,
+                theta,
+                phi,
+                waveform_params,
+                frequency_array,
+                combination=combination,
+                polarization=polarization,
+            )
+        raise ValueError(
+            f"Unknown which_domain '{which_domain}'; expected 'TD' or 'FD'."
+        )
 
     @partial(jax.jit, static_argnums=(0, 1, 6))
     def get_single_link_response_fd(
@@ -284,137 +417,22 @@ class Response(object):
         )
         return det.integrate_quadratic_response(quadratic)
 
-    @partial(jax.jit, static_argnums=(0, 1, 5, 9, 10))
-    def _response_frozen_td_from_freq_domain(
-        self,
-        det: "Detector",
-        time_in_years: ArrayLike,
-        theta: ArrayLike,
-        phi: ArrayLike,
-        n: int,
-        dt: ArrayLike,
-        h_f_plus: jax.Array,
-        h_f_cross: jax.Array,
-        combination: str | None = None,
-        polarization: str = "PC",
-    ) -> jax.Array:
-        """
-        Shared tail behind :meth:`_response_frozen_td_from_strain_td`/
-        :meth:`_response_frozen_td_from_strain_fd`: multiplies `h_f_plus`/`h_f_cross`
-        (already on the ``jnp.fft.rfftfreq(n, d=dt)`` grid) by the transfer function
-        from :meth:`get_linear_integrand_fd` (detector frozen at `time_in_years`), sums
-        over polarizations, and IFFTs back.
-        """
-        frequency_array = jnp.fft.rfftfreq(n, d=dt)
-        pol = polarization.upper()
-        linear = self.get_linear_integrand_fd(
-            det,
-            time_in_years,
-            theta,
-            phi,
-            frequency_array,
-            polarization=pol,
-            combination=combination,
-        )
-
-        # linear[pol[0]/pol[1]] is (configurations, frequency, [channels,] pixels);
-        # move frequency to the last axis so it lines up with h_f_plus/h_f_cross for a
-        # plain elementwise contract_with_h, then IFFT (still frequency/time-last) and
-        # finally move time to front.
-        R_plus = jnp.moveaxis(linear[pol[0]], 1, -1)
-        R_cross = jnp.moveaxis(linear[pol[1]], 1, -1)
-        signal = contract_with_h(R_plus, R_cross, h_f_plus, h_f_cross)
-        result = frequency_domain_to_time_domain(signal, n, dt)
-        return jnp.moveaxis(result, -1, 0)
-
-    @partial(jax.jit, static_argnums=(0, 1, 5, 7, 9, 10))
-    def _response_frozen_td_from_strain_td(
-        self,
-        det: "Detector",
-        time_in_years: ArrayLike,
-        theta: ArrayLike,
-        phi: ArrayLike,
-        n: int,
-        dt: ArrayLike,
-        strain_td: Callable[[jax.Array, Any], tuple[jax.Array, jax.Array]],
-        waveform_params: Any,
-        combination: str | None = None,
-        polarization: str = "PC",
-    ) -> jax.Array:
-        """
-        Backs :meth:`get_response_frozen_td` for a `Waveform` with only `strain_td` set:
-        evaluates it on the real time grid ``jnp.arange(n) * dt`` (taking each
-        polarization's real part) and FFTs it, then delegates to
-        :meth:`_response_frozen_td_from_freq_domain`.
-        """
-        t_seconds = jnp.arange(n) * dt
-        h_plus, h_cross = strain_td(t_seconds, waveform_params)
-        h_f_plus = strain_to_frequency_domain(jnp.real(h_plus), dt)
-        h_f_cross = strain_to_frequency_domain(jnp.real(h_cross), dt)
-        return self._response_frozen_td_from_freq_domain(
-            det,
-            time_in_years,
-            theta,
-            phi,
-            n,
-            dt,
-            h_f_plus,
-            h_f_cross,
-            combination=combination,
-            polarization=polarization,
-        )
-
-    @partial(jax.jit, static_argnums=(0, 1, 5, 7, 9, 10))
-    def _response_frozen_td_from_strain_fd(
-        self,
-        det: "Detector",
-        time_in_years: ArrayLike,
-        theta: ArrayLike,
-        phi: ArrayLike,
-        n: int,
-        dt: ArrayLike,
-        strain_fd: Callable[[jax.Array, Any], tuple[jax.Array, jax.Array]],
-        waveform_params: Any,
-        combination: str | None = None,
-        polarization: str = "PC",
-    ) -> jax.Array:
-        """
-        Backs :meth:`get_response_frozen_td` for a `Waveform` with `strain_fd` set:
-        evaluates it directly on the ``jnp.fft.rfftfreq(n, d=dt)`` grid -- no FFT --
-        then delegates to :meth:`_response_frozen_td_from_freq_domain`.
-        """
-        frequency_array = jnp.fft.rfftfreq(n, d=dt)
-        h_f_plus, h_f_cross = strain_fd(frequency_array, waveform_params)
-        return self._response_frozen_td_from_freq_domain(
-            det,
-            time_in_years,
-            theta,
-            phi,
-            n,
-            dt,
-            h_f_plus,
-            h_f_cross,
-            combination=combination,
-            polarization=polarization,
-        )
-
-    def get_response_frozen_td(
+    def get_response_fd(
         self,
         det: "Detector",
         time_in_years: ArrayLike,
         theta: ArrayLike,
         phi: ArrayLike,
         waveform_params: Any,
-        n: int,
-        dt: ArrayLike,
+        frequency_array: ArrayLike,
         combination: str | None = None,
         polarization: str = "PC",
     ) -> jax.Array:
         """
-        Projects :attr:`waveform` (set beforehand) onto a detector's readout channel(s),
-        sampled on the ``jnp.fft.rfftfreq(n, d=dt)`` grid -- via `waveform.strain_fd`
-        directly if set (see :meth:`_response_frozen_td_from_strain_fd`), otherwise by
-        FFT-ing `waveform.strain_td` (see :meth:`_response_frozen_td_from_strain_td`).
+        Projects :attr:`waveform.strain_fd` (set beforehand) onto a detector's readout
+        channel(s) at `frequency_array`, natively in the frequency domain -- no FFT/IFFT
+        needed, since `strain_fd` is already frequency-domain -- reusing
+        :meth:`get_linear_integrand_fd` for the transfer function.
 
         Left unjitted so that reassigning :attr:`waveform` between calls is always
         picked up -- see the class docstring.
@@ -428,68 +446,57 @@ class Response(object):
             phi (ArrayLike): Longitude(s) of the sky position(s) the signal arrives
                 from, in radians.
             waveform_params (Any): Source parameters passed through to
-                `waveform.strain_td`/`waveform.strain_fd`.
-            n (int): Number of time samples.
-            dt (ArrayLike): Sample spacing, in seconds.
+                `waveform.strain_fd`.
+            frequency_array (ArrayLike): Frequency values, in Hz, at which to evaluate
+                the response.
             combination (str, optional): Name of the readout combination. Defaults to
                 ``det.default_combination``.
             polarization (str, optional): "PC" or "LR". Default is "PC".
 
         Returns:
-            jax.Array: The real time-domain readout, with shape (time, configurations,
-                channels, pixels) for multi-channel combinations (e.g. LISA's
-                `XYZ`/`AET`), or (time, configurations, pixels) for single-channel ones
-                (e.g. LIGO's `Michelson`).
+            jax.Array: The complex frequency-domain readout, with shape
+                (configurations, frequency, channels, pixels) for multi-channel
+                combinations (e.g. LISA's `XYZ`/`AET`), or (configurations, frequency,
+                pixels) for single-channel ones (e.g. LIGO's `Michelson`) -- matching
+                :meth:`get_linear_integrand_fd`'s own axis convention.
 
         Raises:
-            ValueError: If :attr:`waveform` hasn't been set, or has neither
-                `strain_td` nor `strain_fd` set.
+            ValueError: If :attr:`waveform`/`waveform.strain_fd` hasn't been set.
         """
-        if self.waveform is None:
+        strain_fd = self.waveform.strain_fd if self.waveform is not None else None
+        if strain_fd is None:
             raise ValueError(
-                "Response.waveform must be set before calling "
-                "get_response_frozen_td."
+                "Response.waveform.strain_fd must be set before calling "
+                "get_response_fd."
             )
+        h_f_plus, h_f_cross = strain_fd(jnp.asarray(frequency_array), waveform_params)
 
-        if self.waveform.strain_fd is not None:
-            return self._response_frozen_td_from_strain_fd(
-                det,
-                time_in_years,
-                theta,
-                phi,
-                n,
-                dt,
-                self.waveform.strain_fd,
-                waveform_params,
-                combination=combination,
-                polarization=polarization,
-            )
-        if self.waveform.strain_td is not None:
-            return self._response_frozen_td_from_strain_td(
-                det,
-                time_in_years,
-                theta,
-                phi,
-                n,
-                dt,
-                self.waveform.strain_td,
-                waveform_params,
-                combination=combination,
-                polarization=polarization,
-            )
-        raise ValueError(
-            "Response.waveform must have strain_td or strain_fd set before "
-            "calling get_response_frozen_td."
+        pol = polarization.upper()
+        linear = self.get_linear_integrand_fd(
+            det,
+            time_in_years,
+            theta,
+            phi,
+            frequency_array,
+            polarization=pol,
+            combination=combination,
         )
+        # linear[pol[0]/pol[1]] is (configurations, frequency, [channels,]
+        # pixels); move frequency to the last axis so it lines up with
+        # h_f_plus/h_f_cross for a plain elementwise contract_with_h, then
+        # move it back to match get_linear_integrand_fd's own convention.
+        R_plus = jnp.moveaxis(linear[pol[0]], 1, -1)
+        R_cross = jnp.moveaxis(linear[pol[1]], 1, -1)
+        result = contract_with_h(R_plus, R_cross, h_f_plus, h_f_cross)
+        return jnp.moveaxis(result, -1, 1)
 
     def get_single_link_response_delay_td(
         self,
         det: "Detector",
-        times_in_years: ArrayLike,
+        times_in_years: jax.Array,
         theta: ArrayLike,
         phi: ArrayLike,
         waveform_params: Any,
-        times_geometry_years: ArrayLike | None = None,
         freeze_geometry: bool = False,
         wavevector_sign: ArrayLike = 1.0,
         final_factor: ArrayLike = 1j,
@@ -504,11 +511,6 @@ class Response(object):
         (with `strain_td` taken from :attr:`waveform`, set beforehand), for the full
         derivation and convention notes. Not applicable to ground-based, round-trip
         Michelson detectors (LIGO, CE, ET).
-
-        A frozen-geometry response (the detector's configuration held fixed while the
-        waveform still evolves) is just this with a constant `times_geometry_years`,
-        decoupled from `times_in_years`, which keeps supplying the (still-varying)
-        phase/reception times.
 
         Left unjitted (unlike most methods here) so that reassigning :attr:`waveform`
         between calls is always picked up -- see the class docstring. The actual
@@ -543,7 +545,6 @@ class Response(object):
             phi,
             strain_td,
             waveform_params,
-            times_geometry_years,
             freeze_geometry,
             wavevector_sign,
             final_factor,
@@ -557,18 +558,18 @@ class Response(object):
         phi: ArrayLike,
         waveform_params: Any,
         combination: str = "XYZ",
+        tdi_order: float = 1.5,
         wavevector_sign: ArrayLike = 1.0,
         final_factor: ArrayLike = 1j,
     ) -> jax.Array:
         """
         TDI-combined time-domain response for a LISA-like constellation, exact for
         genuinely evolving geometry -- see `tdi_response_delay_td` (in
-        :mod:`gw_response.space_based.single_link_geometry`), which this delegates to
+        :mod:`gw_response.space_based.tdi`), which this delegates to
         (with `strain_td` taken from :attr:`waveform`, set beforehand), for the TDI 1.5
-        (unequal but locally-constant arms) delay-operator formulas this implements
-        (Muratore, Vetrugno & Vitale, arXiv:2303.15929, eq. 2.24) and their reuse of
-        :meth:`get_single_link_response_delay_td`. TDI 2.0 (accounting for arm-length
-        evolution *during* the nested delays themselves) is not implemented.
+        and 2.0 delay-operator formulas this implements (Muratore, Vetrugno & Vitale,
+        arXiv:2303.15929, eqs. 2.24 and 2.23) and their reuse of
+        :meth:`get_single_link_response_delay_td`.
 
         Left unjitted so that reassigning :attr:`waveform` between calls is always
         picked up -- see the class docstring.
@@ -582,7 +583,7 @@ class Response(object):
 
         Raises:
             ValueError: If `theta`/`phi` resolve to more than one sky position, if
-                `combination` isn't a supported name, or if
+                `combination`/`tdi_order` isn't a supported value, or if
                 :attr:`waveform`/`waveform.strain_td` hasn't been set.
         """
         strain_td = self.waveform.strain_td if self.waveform is not None else None
@@ -600,6 +601,7 @@ class Response(object):
             strain_td,
             waveform_params,
             combination,
+            tdi_order,
             wavevector_sign,
             final_factor,
         )
@@ -607,7 +609,7 @@ class Response(object):
     def get_single_link_response_segmented_td(
         self,
         det: "Detector",
-        times_in_years: ArrayLike,
+        times_in_years: jax.Array,
         theta: ArrayLike,
         phi: ArrayLike,
         waveform_params: Any,
@@ -616,28 +618,17 @@ class Response(object):
         final_factor: ArrayLike = 1j,
     ) -> jax.Array:
         """
-        Single-link response for evolving detector geometry, via segment-stacking: the
-        full duration is split into short chunks, each evaluated as a first-order Taylor
-        expansion of the exact delay formula (:meth:`get_single_link_response_delay_td`)
-        around that chunk's own midpoint (one autodiff call per chunk, via
-        `per_arm_linearized_geometry`, instead of one `det.vertex_positions` evaluation
-        per sample). The error shrinks *quadratically* with `segment_length` and is
-        *local* to each segment (doesn't accumulate across segments) -- see
-        ``examples/compare_with_lisagwresponse.ipynb`` for the numerical scaling.
-        `segment_length = 1` is allowed and reproduces
-        :meth:`get_single_link_response_delay_td` sample by sample.
+        Single-link (not TDI-combined) response for evolving detector geometry, via
+        segment-stacking -- see `single_link_response_segmented_td` (in
+        :mod:`gw_response.space_based.single_link_geometry`), which this delegates to
+        (with `strain_td` taken from :attr:`waveform`, set beforehand), for the full
+        derivation and convention notes.
 
         Left unjitted so that reassigning :attr:`waveform` between calls is always
         picked up -- see the class docstring.
 
-        Args:
-            det, theta, phi, waveform_params: see
-                :meth:`get_single_link_response_delay_td`.
-            times_in_years (ArrayLike): Time(s), in years, uniformly spaced.
-            segment_length (int): Number of samples per segment; must evenly divide
-                `times_in_years`'s length.
-            wavevector_sign (ArrayLike): see :meth:`get_single_link_response_delay_td`.
-            final_factor (ArrayLike): see :meth:`get_single_link_response_delay_td`.
+        Args: see `single_link_response_segmented_td` (`strain_td` excepted -- taken
+        from :attr:`waveform` instead).
 
         Returns:
             jax.Array: shape (time, arms=6), arm order :data:`_SINGLE_LINK_ARM_LABELS`.
@@ -652,39 +643,75 @@ class Response(object):
                 "Response.waveform.strain_td must be set before calling "
                 "get_single_link_response_segmented_td."
             )
-        times_in_years = jnp.atleast_1d(times_in_years)
-        n = times_in_years.shape[-1]
-        if n % segment_length != 0:
-            raise ValueError(
-                f"times_in_years length ({n}) must be a multiple of "
-                f"segment_length ({segment_length})."
-            )
-        n_segments = n // segment_length
-
-        times_seconds = times_in_years * self.ps.yr
-        times_years_segments = times_in_years.reshape(n_segments, segment_length)
-        times_seconds_segments = times_seconds.reshape(n_segments, segment_length)
-        t_ref_years = times_years_segments[:, segment_length // 2]
-        t_ref_seconds = times_seconds_segments[:, segment_length // 2]
-
-        one_segment = partial(
-            single_link_response_linearized,
+        return single_link_response_segmented_td(
             det,
             self.ps,
-            theta=theta,
-            phi=phi,
-            strain_td=strain_td,
-            params=waveform_params,
-            wavevector_sign=wavevector_sign,
-            final_factor=final_factor,
+            times_in_years,
+            theta,
+            phi,
+            strain_td,
+            waveform_params,
+            segment_length,
+            wavevector_sign,
+            final_factor,
         )
 
-        # (segments, segment_length, arms), already in time-major order
-        y_segments = jax.vmap(one_segment)(
-            t_ref_years, t_ref_seconds, times_seconds_segments
+    def get_response_segmented_td(
+        self,
+        det: "Detector",
+        times_in_years: ArrayLike,
+        theta: ArrayLike,
+        phi: ArrayLike,
+        waveform_params: Any,
+        segment_length: int,
+        combination: str = "XYZ",
+        wavevector_sign: ArrayLike = 1.0,
+        final_factor: ArrayLike = 1j,
+    ) -> jax.Array:
+        """
+        TDI 1.5 time-domain response for a LISA-like constellation, via
+        segment-stacking -- see `tdi_response_segmented_td` (in
+        :mod:`gw_response.space_based.tdi`), which this delegates to (with `strain_td`
+        taken from :attr:`waveform`, set beforehand), for the full derivation and its
+        reuse of :meth:`get_single_link_response_segmented_td`. Faster than, and not
+        much less accurate than, :meth:`get_response_delay_td`; TDI 2.0 isn't supported
+        here -- use :meth:`get_response_delay_td` for that.
+
+        Left unjitted so that reassigning :attr:`waveform` between calls is always
+        picked up -- see the class docstring.
+
+        Args: see `tdi_response_segmented_td` (`strain_td` excepted -- taken from
+        :attr:`waveform` instead).
+
+        Returns:
+            jax.Array: The real TDI-combined time-domain response, with shape (time,
+                channels=3).
+
+        Raises:
+            ValueError: If `theta`/`phi` resolve to more than one sky position, if
+                `segment_length` doesn't evenly divide the number of samples, if
+                `combination` isn't a supported value, or if
+                :attr:`waveform`/`waveform.strain_td` hasn't been set.
+        """
+        strain_td = self.waveform.strain_td if self.waveform is not None else None
+        if strain_td is None:
+            raise ValueError(
+                "Response.waveform.strain_td must be set before calling "
+                "get_response_segmented_td."
+            )
+        return tdi_response_segmented_td(
+            det,
+            self.ps,
+            times_in_years,
+            theta,
+            phi,
+            strain_td,
+            waveform_params,
+            segment_length,
+            combination,
+            wavevector_sign,
+            final_factor,
         )
-        n_arms = y_segments.shape[-1]
-        return y_segments.reshape(n, n_arms)
 
     def compute_detector(
         self,
