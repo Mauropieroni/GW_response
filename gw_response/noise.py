@@ -87,7 +87,7 @@ class Noise(object):
         self,
         det: "Detector",
         times_in_years: ArrayLike,
-        frequency_array: ArrayLike,
+        frequency_array: jax.Array,
         **noise_parameters,
     ) -> jax.Array:
         """
@@ -100,7 +100,7 @@ class Noise(object):
                 computed for.
             times_in_years (ArrayLike): Time(s), in years, at which to
                 evaluate the detector arms.
-            frequency_array (ArrayLike): Frequency values, in Hz, at which
+            frequency_array (jax.Array): Frequency values, in Hz, at which
                 to evaluate the noise.
             **noise_parameters: Detector-specific noise parameters (e.g.
                 LISA's ``TM_acceleration_parameters``/``OMS_parameters``);
@@ -121,20 +121,22 @@ class Noise(object):
         self,
         det: "Detector",
         times_in_years: ArrayLike,
-        frequency_array: ArrayLike,
+        frequency_array: jax.Array,
         combination: str | None = None,
         **noise_parameters,
     ) -> jax.Array:
         """
         Computes the noise covariance matrix projected into a readout
-        combination, at the given time(s) and frequencies.
+        combination, at the given time(s) and frequencies -- for LISA, Hartwig,
+        Lilley, Muratore & Pieroni (arXiv:2303.15929) eq. 2.29b/2.30's ``S^UV,N
+        = C^UV S^η,N`` (see :meth:`gw_response.detector.Detector.project_noise`).
 
         Args:
             det (Detector): The detector (e.g. LISA, LIGO) the noise is
                 computed for.
             times_in_years (ArrayLike): Time(s), in years, at which to
                 evaluate the detector arms.
-            frequency_array (ArrayLike): Frequency values, in Hz, at which
+            frequency_array (jax.Array): Frequency values, in Hz, at which
                 to evaluate the noise.
             combination (str, optional): Name of the readout combination
                 (e.g. a TDI variable for LISA). Defaults to
@@ -162,7 +164,7 @@ class Noise(object):
         self,
         det: "Detector",
         times_in_years: ArrayLike,
-        frequency_array: ArrayLike,
+        frequency_array: jax.Array,
         combination: str | None = None,
         **noise_parameters,
     ) -> None:
@@ -178,7 +180,7 @@ class Noise(object):
                 computed for.
             times_in_years (ArrayLike): Time(s), in years, at which to
                 evaluate the detector arms.
-            frequency_array (ArrayLike): Frequency values, in Hz, at which
+            frequency_array (jax.Array): Frequency values, in Hz, at which
                 to evaluate the noise.
             combination (str, optional): Name of the readout combination
                 (e.g. a TDI variable for LISA). Defaults to

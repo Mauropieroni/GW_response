@@ -83,7 +83,10 @@ def xi_k_no_G_static(
     the geometrical antenna-pattern factor is applied (see :func:`xi_k_A_static`, which
     combines this with :func:`gw_response.single_link_utils.geometrical_factor`). Static
     (simultaneous-arm-geometry) counterpart of
-    :func:`gw_response.single_link_retarded.xi_k_no_G_retarded`.
+    :func:`gw_response.single_link_retarded.xi_k_no_G_retarded`. The ``M_ij`` factor of
+    Hartwig, Lilley, Muratore & Pieroni (arXiv:2303.15929) eq. 2.14 -- see
+    :func:`gw_response.single_link_utils.finite_arm_transfer_function` regarding the
+    phase-splitting caveat.
 
     Args:
         unit_wavevector (jax.Array): Unit wavevector(s), with shape (vectorial_index
@@ -116,7 +119,11 @@ def xi_k_A_static(
     """
     Combines the finite-arm-length transfer function (:func:`xi_k_no_G_static`) with the
     geometrical antenna-pattern factor to give the single-link response kernel, prior to
-    the light-travel-time and position phase factors.
+    the light-travel-time and position phase factors. The
+    ``ξ_ij^A(f,k̂) = e^{-2πifk̂·L⃗_ij} M_ij(f,k̂) G^A(k̂,l̂_ij)`` kernel of Hartwig,
+    Lilley, Muratore & Pieroni (arXiv:2303.15929) eq. 2.13 (the ``e^{-2πifk̂·L⃗_ij}``
+    arm-vector phase factor is folded into :func:`xi_k_no_G_static`'s own ``M_ij``
+    here rather than kept separate).
 
     Args:
         arms_matrix_rescaled (jax.Array): Detector arm vectors rescaled by the arm
@@ -216,7 +223,12 @@ def single_link_response_static(
 ) -> jax.Array:
     """
     Computes the full single-link (arm) strain response, combining the response kernel
-    with the light-travel-time delay and the satellite position phase factors.
+    with the light-travel-time delay and the satellite position phase factors. The
+    full frequency-domain single-link transfer function of Hartwig, Lilley, Muratore &
+    Pieroni (arXiv:2303.15929) eq. 2.12 (the ``(f/f_ij) e^{2πif(t-L_ij)}`` prefactor and
+    ``e^{-2πifk̂·x⃗_i}`` position phase combined with :func:`xi_k_A_static`'s own
+    ``ξ_ij^A``), for the symmetric-arm (static) case; static-arm counterpart of
+    :func:`gw_response.single_link_retarded.single_link_response_retarded`.
 
     Args:
         positions_rescaled (jax.Array): Satellite positions rescaled by the arm length,

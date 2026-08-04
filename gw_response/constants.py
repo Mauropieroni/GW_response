@@ -56,14 +56,18 @@ class BasisTransformations:
     A data class for managing basis transformations in astronomical computations.
 
     This class provides a predefined transformation matrix for converting coordinates
-    from the XYZ coordinate system to the AET (Arm, Ecliptic, Transverse) coordinate
-    system, which is commonly used in the context of LISA (Laser Interferometer Space
-    Antenna) and similar astronomical studies.
+    from the XYZ (Michelson) TDI combination to the (quasi-)orthogonal A, E, T
+    combination, commonly used in the context of LISA (Laser Interferometer Space
+    Antenna) data analysis. ("A, E, T" are just labels here, not an acronym -- Hartwig,
+    Lilley, Muratore & Pieroni (arXiv:2303.15929) eq. 2.26 introduces them the same way,
+    with no expansion.)
 
     Attributes:
         XYZ_to_AET (jnp.array): A numpy array representing the transformation matrix
-            from the XYZ coordinate system to the AET coordinate system. The
-            transformation matrix is defined as ``[[-1/sqrt(2), 0, 1/sqrt(2)],
+            from the XYZ coordinate system to the AET coordinate system: Hartwig,
+            Lilley, Muratore & Pieroni (arXiv:2303.15929) eq. 2.26's ``A = (Z-X)/√2``,
+            ``E = (X-2Y+Z)/√6``, ``T = (X+Y+Z)/√3``. The transformation matrix is
+            defined as ``[[-1/sqrt(2), 0, 1/sqrt(2)],
             [1/sqrt(6), -2/sqrt(6), 1/sqrt(6)], [1/sqrt(3), 1/sqrt(3), 1/sqrt(3)]]``.
 
     This class facilitates the conversion of coordinates between different systems,

@@ -14,7 +14,7 @@ from gw_response.constants import PhysicalConstants
 from gw_response.detector import Detector
 from gw_response.noise import Noise
 from gw_response.response import Response
-from gw_response.utils import combine_single_link
+from gw_response.utils import as_time_array, combine_single_link
 from gw_response.ground_based.datastream import (
     detector_output,
     detector_output_long_wavelength,
@@ -38,7 +38,7 @@ _ligo_interp = interpax.Interpolator1D(
 )
 
 
-def LIGO_noise(frequencies: ArrayLike) -> jax.Array:
+def LIGO_noise(frequencies: jax.Array) -> jax.Array:
     """
     Returns the LIGO design PSD at `frequencies`, interpolated from the tabulated design
     curve. `_ligo_interp` is a jax-traceable `interpax.Interpolator1D`, so it can be
@@ -46,21 +46,21 @@ def LIGO_noise(frequencies: ArrayLike) -> jax.Array:
     from a jitted caller like `Noise.get_single_link_noise`).
 
     Args:
-        frequencies (ArrayLike): Frequency values, in Hz, at which to evaluate the
+        frequencies (jax.Array): Frequency values, in Hz, at which to evaluate the
             noise.
 
     Returns:
         jax.Array: The LIGO design noise PSD, with the same shape as ``frequencies``.
     """
-    return _ligo_interp(jnp.asarray(frequencies))
+    return _ligo_interp(frequencies)
 
 
-def single_link_LIGO_noise_variance(frequencies: ArrayLike) -> jax.Array:
+def single_link_LIGO_noise_variance(frequencies: jax.Array) -> jax.Array:
     """
     Returns the 1D Michelson-output PSD S_n(f) for LIGO.
 
     Args:
-        frequencies (ArrayLike): Frequency values, in Hz, at which to evaluate the
+        frequencies (jax.Array): Frequency values, in Hz, at which to evaluate the
             noise.
 
     Returns:
@@ -90,7 +90,7 @@ _SITE_GEOMETRIES = {
 # -- JIT-Compiled Helpers for Static Geometries ------------------------------
 # -----------------------------------------------------------------------------
 @jax.jit
-def _rotate_about_z(vec: jax.Array, angle: ArrayLike) -> jax.Array:
+def _rotate_about_z(vec: jax.Array, angle: jax.Array) -> jax.Array:
     """
     Rotates a fixed 3-vector about the (ECEF) z-axis -- Earth's rotation axis, to
     standard approximation ignoring precession/nutation/polar motion -- by one angle per
@@ -98,7 +98,7 @@ def _rotate_about_z(vec: jax.Array, angle: ArrayLike) -> jax.Array:
 
     Args:
         vec (jax.Array): A fixed vector, with shape (vectorial_index (3),).
-        angle (ArrayLike): Rotation angle(s), in radians, with shape (configurations,).
+        angle (jax.Array): Rotation angle(s), in radians, with shape (configurations,).
 
     Returns:
         jax.Array: The rotated vector(s), with shape (configurations, vectorial_index
@@ -118,8 +118,8 @@ def LIGO_positions(
     center: jax.Array,
     arm1: jax.Array,
     arm2: jax.Array,
-    armlength: ArrayLike,
-    rotation_angle: ArrayLike,
+    armlength: jax.Array,
+    rotation_angle: jax.Array,
 ) -> jax.Array:
     """
     Computes the Cartesian positions of a LIGO-like L-shaped detector's 3 vertices --
@@ -132,14 +132,14 @@ def LIGO_positions(
     the non-rotating-Earth approximation.
 
     Args:
-        center (ArrayLike): ECEF unit-vector position of the detector's corner
+        center (jax.Array): ECEF unit-vector position of the detector's corner
             (beamsplitter) station, with shape (vectorial_index (3),).
-        arm1 (ArrayLike): Unit vector along the first arm, with shape (vectorial_index
+        arm1 (jax.Array): Unit vector along the first arm, with shape (vectorial_index
             (3),).
-        arm2 (ArrayLike): Unit vector along the second arm, with shape (vectorial_index
+        arm2 (jax.Array): Unit vector along the second arm, with shape (vectorial_index
             (3),).
-        armlength (ArrayLike): Arm length, in meters.
-        rotation_angle (ArrayLike): Earth's rotation angle(s) about the ECEF z-axis, in
+        armlength (jax.Array): Arm length, in meters.
+        rotation_angle (jax.Array): Earth's rotation angle(s) about the ECEF z-axis, in
             radians, with shape (configurations,).
 
     Returns:
@@ -157,8 +157,8 @@ def LIGO_positions(
 def LIGO_arms_matrix(
     arm1: jax.Array,
     arm2: jax.Array,
-    armlength: ArrayLike,
-    rotation_angle: ArrayLike,
+    armlength: jax.Array,
+    rotation_angle: jax.Array,
 ) -> jax.Array:
     """
     Computes the arm matrix of a LIGO-like L-shaped detector: the two physical arm
@@ -168,12 +168,12 @@ def LIGO_arms_matrix(
     See :func:`LIGO_positions` regarding `rotation_angle`.
 
     Args:
-        arm1 (ArrayLike): Unit vector along the first arm, with shape (vectorial_index
+        arm1 (jax.Array): Unit vector along the first arm, with shape (vectorial_index
             (3),).
-        arm2 (ArrayLike): Unit vector along the second arm, with shape (vectorial_index
+        arm2 (jax.Array): Unit vector along the second arm, with shape (vectorial_index
             (3),).
-        armlength (ArrayLike): Arm length, in meters.
-        rotation_angle (ArrayLike): Earth's rotation angle(s) about the ECEF z-axis, in
+        armlength (jax.Array): Arm length, in meters.
+        rotation_angle (jax.Array): Earth's rotation angle(s) about the ECEF z-axis, in
             radians, with shape (configurations,).
 
     Returns:
@@ -188,7 +188,7 @@ def LIGO_arms_matrix(
 # -----------------------------------------------------------------------------
 # -- Unified LIGO Detector Class ---------------------------------------------
 # -----------------------------------------------------------------------------
-@chex.dataclass(frozen=True)
+@chex.dataclass
 class LIGO(Detector):
     """
     A data class representing a LIGO-like L-shaped ground-based gravitational-wave
@@ -274,21 +274,27 @@ class LIGO(Detector):
                 `time_in_years`.
         """
         omega_earth = 2 * jnp.pi / self.ps.sidereal_day
-        return jnp.asarray(
-            self.include_earth_rotation * omega_earth * time_in_years * self.ps.yr
+        return (
+            self.include_earth_rotation
+            * omega_earth
+            * as_time_array(time_in_years)
+            * self.ps.yr
         )
 
-    def _vertex_positions(self, time_in_years: ArrayLike) -> jax.Array:
+    def vertex_positions(self, time_in_years: ArrayLike) -> jax.Array:
         """
         Computes the positions of LIGO's 3 vertices -- the corner station and the two
         end mirrors -- at the given time(s). See :func:`LIGO_positions`.
 
         Args:
-            time_in_years (ArrayLike): Time(s), in years.
+            time_in_years (ArrayLike): Time(s), in years. Normalized via
+                :func:`gw_response.utils.as_time_array` (accepts a bare scalar or an
+                array).
 
         Returns:
             jax.Array: The vertex positions, as returned by :func:`LIGO_positions`.
         """
+        time_in_years = as_time_array(time_in_years)
         return LIGO_positions(
             self.center,
             self.arm1,
@@ -297,16 +303,19 @@ class LIGO(Detector):
             self._earth_rotation_angle(time_in_years),
         )
 
-    def _detector_arms(self, time_in_years: ArrayLike) -> jax.Array:
+    def detector_arms(self, time_in_years: ArrayLike) -> jax.Array:
         """
         Computes LIGO's arm matrix at the given time(s). See :func:`LIGO_arms_matrix`.
 
         Args:
-            time_in_years (ArrayLike): Time(s), in years.
+            time_in_years (ArrayLike): Time(s), in years. Normalized via
+                :func:`gw_response.utils.as_time_array` (accepts a bare scalar or an
+                array).
 
         Returns:
             jax.Array: The arm matrix, as returned by :func:`LIGO_arms_matrix`.
         """
+        time_in_years = as_time_array(time_in_years)
         return LIGO_arms_matrix(
             self.arm1,
             self.arm2,
@@ -330,7 +339,7 @@ class LIGO(Detector):
         return ((0, 1), (0, 2), (1, 0), (2, 0))
 
     def combination_matrix(
-        self, combination: str, arms_matrix_rescaled: ArrayLike, x_vector: ArrayLike
+        self, combination: str, arms_matrix_rescaled: jax.Array, x_vector: jax.Array
     ) -> jax.Array:
         """
         Builds the Michelson-combination mixing matrix. See
@@ -341,9 +350,9 @@ class LIGO(Detector):
         Args:
             combination (str): Must be `self.default_combination` ("Michelson"); LIGO
                 supports no other readout combination.
-            arms_matrix_rescaled (ArrayLike): Detector arm vectors rescaled by the arm
+            arms_matrix_rescaled (jax.Array): Detector arm vectors rescaled by the arm
                 length.
-            x_vector (ArrayLike): Vector of ``2 pi f L / c`` values over frequency.
+            x_vector (jax.Array): Vector of ``2 pi f L / c`` values over frequency.
 
         Returns:
             jax.Array: The Michelson-combination mixing matrix.
@@ -360,7 +369,7 @@ class LIGO(Detector):
         return detector_output(arms_matrix_rescaled, x_vector)
 
     def linear_response_from_single_link(
-        self, single_link: dict[str, jax.Array], combination_matrix: ArrayLike
+        self, single_link: dict[str, jax.Array], combination_matrix: jax.Array
     ) -> dict[str, jax.Array]:
         """
         Applies the Michelson-combination mixing matrix to each polarization's
@@ -371,7 +380,7 @@ class LIGO(Detector):
 
         Args:
             single_link (dict): Single-link response per polarization.
-            combination_matrix (ArrayLike): Mixing matrix as built by
+            combination_matrix (jax.Array): Mixing matrix as built by
                 :meth:`combination_matrix`.
 
         Returns:
@@ -417,9 +426,9 @@ class LIGO(Detector):
 
     def single_link_noise(
         self,
-        frequency_array: ArrayLike,
-        arms_matrix_rescaled: ArrayLike,
-        x_vector: ArrayLike,
+        frequency_array: jax.Array,
+        arms_matrix_rescaled: jax.Array,
+        x_vector: jax.Array,
         **_,
     ) -> jax.Array:
         """
@@ -431,10 +440,10 @@ class LIGO(Detector):
         unused. LIGO also takes no detector-specific noise parameters.
 
         Args:
-            frequency_array (ArrayLike): Frequency values, in Hz, at which to evaluate
+            frequency_array (jax.Array): Frequency values, in Hz, at which to evaluate
                 the noise.
-            arms_matrix_rescaled (ArrayLike): Unused.
-            x_vector (ArrayLike): Unused.
+            arms_matrix_rescaled (jax.Array): Unused.
+            x_vector (jax.Array): Unused.
 
         Returns:
             jax.Array: The LIGO design noise PSD.
@@ -442,7 +451,7 @@ class LIGO(Detector):
         return single_link_LIGO_noise_variance(frequency_array)
 
     def project_noise(
-        self, combination_matrix: ArrayLike, single_link_noise: jax.Array
+        self, combination_matrix: jax.Array, single_link_noise: jax.Array
     ) -> jax.Array:
         """
         Returns `single_link_noise` unchanged.
@@ -451,7 +460,7 @@ class LIGO(Detector):
         readout-domain PSD, so there is nothing left to project.
 
         Args:
-            combination_matrix (ArrayLike): Unused.
+            combination_matrix (jax.Array): Unused.
             single_link_noise (jax.Array): The noise PSD as built by
                 :meth:`single_link_noise`.
 

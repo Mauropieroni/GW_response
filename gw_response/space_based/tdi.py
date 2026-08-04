@@ -62,7 +62,12 @@ def sin_factors(arms_matrix_rescaled: ArrayLike, x_vector: ArrayLike) -> jax.Arr
 def tdi_XYZ_matrix(arms_matrix_rescaled: ArrayLike, x_vector: ArrayLike) -> jax.Array:
     """
     Builds the matrix projecting single-link responses onto the first-generation
-    Michelson TDI variables X, Y, Z.
+    Michelson TDI variables X, Y, Z: Hartwig, Lilley, Muratore & Pieroni
+    (arXiv:2303.15929) eq. 2.24a's
+    ``X = (1-D13D31)(η12+D12η21) + (D12D21-1)(η13+D13η31)`` (Y, Z cyclic
+    permutations), as a frequency-domain projection matrix -- each delay operator
+    ``D_ij`` replaced by ``e^{-i2πfL_ij}`` per eq. 2.27's own prescription for
+    reading off ``c^V_ij`` this way.
 
     Args:
         arms_matrix_rescaled (ArrayLike): Detector arm vectors rescaled by the arm
@@ -128,7 +133,11 @@ def tdi_XYZ_matrix(arms_matrix_rescaled: ArrayLike, x_vector: ArrayLike) -> jax.
 def tdi_zeta_matrix(arms_matrix_rescaled: ArrayLike, x_vector: ArrayLike) -> jax.Array:
     """
     Builds the matrix projecting single-link responses onto the zeta ("Sagnac-like")
-    symmetric TDI combination.
+    symmetric TDI combination: Hartwig, Lilley, Muratore & Pieroni (arXiv:2303.15929)
+    eq. 2.24c's ``ζ = D12(η31-η32) + D23(η12-η13) + D31(η23-η21)`` (algebraically
+    identical to the ``D_ji``-labeled form in the comment below, under the reciprocal-
+    arm ``D_ij = D_ji`` this module assumes), as a frequency-domain projection matrix
+    (see :func:`tdi_XYZ_matrix` regarding the ``D_ij -> e^{-i2πfL_ij}`` replacement).
 
     Args:
         arms_matrix_rescaled (ArrayLike): Detector arm vectors rescaled by the arm
@@ -166,7 +175,10 @@ def tdi_Sagnac_matrix(
 ) -> jax.Array:
     """
     Builds the matrix projecting single-link responses onto the (first-generation)
-    Sagnac TDI variables alpha, beta, gamma.
+    Sagnac TDI variables alpha, beta, gamma: Hartwig, Lilley, Muratore & Pieroni
+    (arXiv:2303.15929) eq. 2.24b (quoted verbatim in the comment below), as a
+    frequency-domain projection matrix (see :func:`tdi_XYZ_matrix` regarding the
+    ``D_ij -> e^{-i2πfL_ij}`` replacement).
 
     Args:
         arms_matrix_rescaled (ArrayLike): Detector arm vectors rescaled by the arm
@@ -228,7 +240,10 @@ def tdi_Sagnac_matrix(
 def tdi_AET_matrix(arms_matrix_rescaled: ArrayLike, x_vector: ArrayLike) -> jax.Array:
     """
     Builds the matrix projecting single-link responses onto the A, E, T TDI variables,
-    obtained by rotating the XYZ TDI basis.
+    obtained by rotating the XYZ TDI basis: Hartwig, Lilley, Muratore & Pieroni
+    (arXiv:2303.15929) eq. 2.26's ``A = (Z-X)/√2``, ``E = (X-2Y+Z)/√6``,
+    ``T = (X+Y+Z)/√3`` (see :class:`gw_response.constants.BasisTransformations` for the
+    exact matrix).
 
     Args:
         arms_matrix_rescaled (ArrayLike): Detector arm vectors rescaled by the arm
@@ -253,7 +268,11 @@ def tdi_AET_Sagnac_matrix(
 ) -> jax.Array:
     """
     Builds the matrix projecting single-link responses onto the A, E, T TDI variables
-    built from the Sagnac (rather than Michelson) combinations.
+    built from the Sagnac (rather than Michelson) combinations: Hartwig, Lilley,
+    Muratore & Pieroni (arXiv:2303.15929) eq. 2.25's ``𝒜 = (γ-α)/√2``,
+    ``ℰ = (α-2β+γ)/√6``, ``𝒯 = (α+β+γ)/√3`` -- structurally the same rotation matrix as
+    :func:`tdi_AET_matrix`'s eq. 2.26, applied to the Sagnac base variables instead of
+    the Michelson ones.
 
     Args:
         arms_matrix_rescaled (ArrayLike): Detector arm vectors rescaled by the arm
@@ -278,7 +297,9 @@ def tdi_AE_zeta_matrix(
 ) -> jax.Array:
     """
     Builds the matrix projecting single-link responses onto the A, E TDI variables
-    together with the (Sagnac-like) zeta combination.
+    together with the (Sagnac-like) zeta combination -- this paper's own "AEζ" basis
+    (Hartwig, Lilley, Muratore & Pieroni, arXiv:2303.15929, Sec. II B 1), combining
+    :func:`tdi_AET_matrix`'s eq. 2.26 A/E with :func:`tdi_zeta_matrix`'s eq. 2.24c ζ.
 
     Args:
         arms_matrix_rescaled (ArrayLike): Detector arm vectors rescaled by the arm
@@ -305,7 +326,10 @@ def tdi_AE_Sagnac_zeta_matrix(
 ) -> jax.Array:
     """
     Builds the matrix projecting single-link responses onto the Sagnac-based A, E TDI
-    variables together with the zeta combination.
+    variables together with the zeta combination -- this paper's own "𝒜ℰζ" basis
+    (Hartwig, Lilley, Muratore & Pieroni, arXiv:2303.15929, Sec. II B 1), combining
+    :func:`tdi_AET_Sagnac_matrix`'s eq. 2.25 𝒜/ℰ with :func:`tdi_zeta_matrix`'s eq.
+    2.24c ζ.
 
     Args:
         arms_matrix_rescaled (ArrayLike): Detector arm vectors rescaled by the arm
@@ -390,7 +414,9 @@ def build_tdi(
     x_vector: ArrayLike,
 ) -> jax.Array:
     """
-    Projects a single-link response onto the requested TDI combination.
+    Projects a single-link response onto the requested TDI combination: Hartwig,
+    Lilley, Muratore & Pieroni (arXiv:2303.15929) eq. 2.27's
+    ``V(f) = Σ c^V_ij η_ij(f)``.
 
     This mirrors :func:`gw_response.response_utils.linear_response_angular`, exposed
     here for convenience when only TDI-related quantities are needed.
@@ -422,7 +448,7 @@ def build_tdi(
 
 
 # TDI 1.5 (unequal but locally-constant arms) time-domain combination
-# formulas, from Muratore, Vetrugno & Vitale (arXiv:2303.15929), eq. (2.24),
+# formulas, from Hartwig, Lilley, Muratore & Pieroni (arXiv:2303.15929), eq. (2.24),
 # each expressed as a tuple of (sign, arm_label, delay_arm_labels) terms: a
 # term contributes ``sign * eta_{arm_label}(t - sum(ltt[d] for d in
 # delay_arm_labels))``, i.e. a delay operator "D_ij" becomes a time shift by
@@ -490,7 +516,7 @@ def _cyclic_permute_terms(
     )
 
 
-# TDI 2.0 pre-factors (Muratore, Vetrugno & Vitale, arXiv:2303.15929, eq. 2.23),
+# TDI 2.0 pre-factors (Hartwig, Lilley, Muratore & Pieroni, arXiv:2303.15929, eq. 2.23),
 # each a tuple of (sign, delay_arm_labels) terms applied to the *already-built*
 # TDI 1.5 channel (see :func:`_apply_tdi2_prefactor`): X2 = (1 - D31^2 D12^2) X,
 # alpha2 = (1 - D12 D23 D31) alpha, zeta2 = (D31 - D12 D23) zeta. `Y2`/`Z2` and
@@ -540,8 +566,6 @@ def _tdi_channel_delay_td(
     strain_td: Callable[[jax.Array, Any], tuple[jax.Array, jax.Array]],
     waveform_params: Any,
     ltt_by_arm: dict[int, jax.Array],
-    wavevector_sign: ArrayLike,
-    final_factor: ArrayLike,
 ) -> jax.Array:
     """
     Evaluates one TDI channel from `terms`: for each term, shifts `times_in_years` by
@@ -549,10 +573,10 @@ def _tdi_channel_delay_td(
     light-travel-time) and calls
     :func:`gw_response.space_based.single_link_geometry.single_link_response_delay_td`
     (reusing its exact per-arm evaluation and geometry), picking out just that term's
-    arm and accumulating with its sign. `final_factor`/`jnp.real` are applied per term
-    inside `single_link_response_delay_td`; since `Re` is linear over the (real) signs
-    summed here, this is exactly equivalent to combining the complex per-arm terms
-    first.
+    arm and accumulating with its sign. `jnp.real` (with the library's own natural
+    convention baked in) is applied per term inside `single_link_response_delay_td`;
+    since `Re` is linear over the (real) signs summed here, this is exactly equivalent
+    to combining the complex per-arm terms first.
 
     Returns:
         jax.Array: shape (time,).
@@ -578,8 +602,6 @@ def _tdi_channel_delay_td(
             phi,
             strain_td,
             waveform_params,
-            wavevector_sign=wavevector_sign,
-            final_factor=final_factor,
         )
         arm_idx = _SINGLE_LINK_ARM_LABELS.index(arm_label)
         channel = channel + sign * y_all_arms[:, arm_idx]
@@ -597,8 +619,6 @@ def _tdi_channel_segmented_td(
     waveform_params: Any,
     segment_length: int,
     ltt_by_arm: dict[int, jax.Array],
-    wavevector_sign: ArrayLike,
-    final_factor: ArrayLike,
 ) -> jax.Array:
     """
     Evaluates one TDI channel from `terms` via segment-stacking: for each term, shifts
@@ -633,8 +653,6 @@ def _tdi_channel_segmented_td(
             strain_td,
             waveform_params,
             segment_length,
-            wavevector_sign=wavevector_sign,
-            final_factor=final_factor,
         )
         arm_idx = _SINGLE_LINK_ARM_LABELS.index(arm_label)
         channel = channel + sign * y_all_arms[:, arm_idx]
@@ -651,8 +669,6 @@ def tdi_response_segmented_td(
     waveform_params: Any,
     segment_length: int,
     combination: str = "XYZ",
-    wavevector_sign: ArrayLike = 1.0,
-    final_factor: ArrayLike = 1j,
 ) -> jax.Array:
     """
     TDI 1.5 (unequal but locally-constant arms) time-domain response for a LISA-like
@@ -667,8 +683,8 @@ def tdi_response_segmented_td(
     Backs ``Response.get_response_segmented_td``.
 
     Args:
-        det, ps, theta, phi, strain_td, waveform_params, wavevector_sign, final_factor:
-            see :func:`tdi_response_delay_td`.
+        det, ps, theta, phi, strain_td, waveform_params: see
+            :func:`tdi_response_delay_td`.
         times_in_years (ArrayLike): Reception time(s), in years, uniformly spaced.
         segment_length (int): Number of samples per segment; must evenly divide
             `times_in_years`'s length -- see `single_link_response_segmented_td` (in
@@ -703,8 +719,6 @@ def tdi_response_segmented_td(
                 waveform_params,
                 segment_length,
                 ltt_by_arm,
-                wavevector_sign,
-                final_factor,
             )
             for shift in range(3)
         ]
@@ -722,8 +736,6 @@ def tdi_response_segmented_td(
             waveform_params,
             segment_length,
             ltt_by_arm,
-            wavevector_sign,
-            final_factor,
         )
 
     xyz_to_aet = BasisTransformations().XYZ_to_AET
@@ -769,8 +781,6 @@ def tdi_response_delay_td(
     waveform_params: Any,
     combination: str = "XYZ",
     tdi_order: float = 1.5,
-    wavevector_sign: ArrayLike = 1.0,
-    final_factor: ArrayLike = 1j,
 ) -> jax.Array:
     """
     TDI 1.5 or 2.0 (unequal, and for 2.0 also evolving-during-the-nested-delays, arms)
@@ -783,7 +793,7 @@ def tdi_response_delay_td(
     `tdi_order=2.0` additionally reuses the 1.5-generation channel itself (see
     :func:`_apply_tdi2_prefactor`), rather than any new per-arm derivation. See the
     module-level comments above :data:`_X_TERMS`/:data:`_TDI2_PREFACTOR` for the
-    delay-operator convention and the Muratore, Vetrugno & Vitale reference
+    delay-operator convention and the Hartwig, Lilley, Muratore & Pieroni reference
     (arXiv:2303.15929, eqs. 2.24 and 2.23) this implements. Backs
     ``Response.get_response_delay_td``.
 
@@ -805,14 +815,11 @@ def tdi_response_delay_td(
             "AE_zeta", "AE_Sagnac_zeta" (matching :data:`TDI_map`'s keys). Default is
             "XYZ".
         tdi_order (float, optional): 1.5 or 2.0. Default is 1.5.
-        wavevector_sign (ArrayLike): Multiplies `unit_vec(theta, phi)`; see
-            `single_link_response_delay_td`.
-        final_factor (ArrayLike): Complex factor applied to each term's result just
-            before taking its real part; see `single_link_response_delay_td`.
 
     Returns:
         jax.Array: The real TDI-combined time-domain response, with shape (time,
-            channels=3).
+            channels=3). Uses the library's own natural convention internally, same as
+            `single_link_response_delay_td` -- see there.
 
     Raises:
         ValueError: If `combination` or `tdi_order` isn't one of the supported values.
@@ -839,8 +846,6 @@ def tdi_response_delay_td(
             strain_td,
             waveform_params,
             ltt_by_arm_t,
-            wavevector_sign,
-            final_factor,
         )
 
     def channel_group(base_terms: tuple, prefactor_name: str) -> jax.Array:

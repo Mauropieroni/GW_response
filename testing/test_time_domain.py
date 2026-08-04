@@ -29,6 +29,111 @@ class TestTimeDomainRoundTrip(unittest.TestCase):
         self.assertAlmostEqual(float(jnp.max(jnp.abs(h_rec - h))), 0.0, places=10)
 
 
+class TestRotatePolarizationsByPsi(unittest.TestCase):
+    def test_psi_zero_is_noop(self):
+        rng = np.random.default_rng(2)
+        h_plus_source = jnp.asarray(rng.normal(size=10) + 1j * rng.normal(size=10))
+        h_cross_source = jnp.asarray(rng.normal(size=10) + 1j * rng.normal(size=10))
+
+        h_plus, h_cross = gwr.rotate_polarizations_by_psi(
+            h_plus_source, h_cross_source, 0.0
+        )
+        self.assertAlmostEqual(
+            float(jnp.max(jnp.abs(h_plus - h_plus_source))), 0.0, places=12
+        )
+        self.assertAlmostEqual(
+            float(jnp.max(jnp.abs(h_cross - h_cross_source))), 0.0, places=12
+        )
+
+    def test_matches_cos_sin_rotation_formula(self):
+        # Direct cross-check against the standard cos(2*psi)/sin(2*psi)
+        # rotation formula (LDC Manual LISA-LCST-SGS-MAN-001, Sec. 6.1.2, eq.
+        # 20), hand-written here independently of the implementation.
+        rng = np.random.default_rng(3)
+        h_plus_source = jnp.asarray(rng.normal(size=7) + 1j * rng.normal(size=7))
+        h_cross_source = jnp.asarray(rng.normal(size=7) + 1j * rng.normal(size=7))
+        psi = 0.4123
+
+        h_plus, h_cross = gwr.rotate_polarizations_by_psi(
+            h_plus_source, h_cross_source, psi
+        )
+
+        cos_2psi, sin_2psi = np.cos(2 * psi), np.sin(2 * psi)
+        h_plus_expected = h_plus_source * cos_2psi - h_cross_source * sin_2psi
+        h_cross_expected = h_plus_source * sin_2psi + h_cross_source * cos_2psi
+
+        self.assertAlmostEqual(
+            float(jnp.max(jnp.abs(h_plus - h_plus_expected))), 0.0, places=12
+        )
+        self.assertAlmostEqual(
+            float(jnp.max(jnp.abs(h_cross - h_cross_expected))), 0.0, places=12
+        )
+
+    def test_from_source_frame_matches_from_amplitude_phase_at_psi_zero(self):
+        def amplitude_plus(t, waveform_params):
+            return jnp.asarray(1e-21)
+
+        def amplitude_cross(t, waveform_params):
+            return jnp.asarray(0.5e-21)
+
+        def phase(t, waveform_params):
+            return 2 * jnp.pi * 1e-2 * t
+
+        waveform_rotated = gwr.Waveform.from_source_frame(
+            amplitude_plus, amplitude_cross, phase, psi=0.0
+        )
+        waveform_plain = gwr.Waveform.from_amplitude_phase(
+            amplitude_plus, amplitude_cross, phase
+        )
+        assert waveform_rotated.strain_td is not None
+        assert waveform_plain.strain_td is not None
+
+        t = jnp.linspace(0.0, 10.0, 20)
+        h_plus_rotated, h_cross_rotated = waveform_rotated.strain_td(t, None)
+        h_plus_plain, h_cross_plain = waveform_plain.strain_td(t, None)
+
+        self.assertAlmostEqual(
+            float(jnp.max(jnp.abs(h_plus_rotated - h_plus_plain))), 0.0, places=12
+        )
+        self.assertAlmostEqual(
+            float(jnp.max(jnp.abs(h_cross_rotated - h_cross_plain))), 0.0, places=12
+        )
+
+    def test_from_source_frame_matches_manual_rotation_at_nonzero_psi(self):
+        def amplitude_plus(t, waveform_params):
+            return jnp.asarray(1e-21)
+
+        def amplitude_cross(t, waveform_params):
+            return jnp.asarray(0.5e-21)
+
+        def phase(t, waveform_params):
+            return 2 * jnp.pi * 1e-2 * t
+
+        psi = 0.6
+        waveform_rotated = gwr.Waveform.from_source_frame(
+            amplitude_plus, amplitude_cross, phase, psi=psi
+        )
+        waveform_plain = gwr.Waveform.from_amplitude_phase(
+            amplitude_plus, amplitude_cross, phase
+        )
+        assert waveform_rotated.strain_td is not None
+        assert waveform_plain.strain_td is not None
+
+        t = jnp.linspace(0.0, 10.0, 20)
+        h_plus_rotated, h_cross_rotated = waveform_rotated.strain_td(t, None)
+        h_plus_source, h_cross_source = waveform_plain.strain_td(t, None)
+        h_plus_expected, h_cross_expected = gwr.rotate_polarizations_by_psi(
+            h_plus_source, h_cross_source, psi
+        )
+
+        self.assertAlmostEqual(
+            float(jnp.max(jnp.abs(h_plus_rotated - h_plus_expected))), 0.0, places=12
+        )
+        self.assertAlmostEqual(
+            float(jnp.max(jnp.abs(h_cross_rotated - h_cross_expected))), 0.0, places=12
+        )
+
+
 class TestInstantaneousFrequency(unittest.TestCase):
     def test_matches_analytical_derivative_for_exact_bin_tone(self):
         # Only exact for a tone that's exactly periodic in the FFT window
@@ -85,9 +190,7 @@ class TestSingleLinkDelayRetardedSegmentedTD(unittest.TestCase):
             amplitude_plus, amplitude_cross, phase
         )
 
-        d_t = response.get_single_link_response_delay_td(
-            lisa, times, theta, phi, None
-        )
+        d_t = response.get_single_link_response_delay_td(lisa, times, theta, phi, None)
         self.assertEqual(d_t.shape, (50, 6))
         self.assertTrue(bool(jnp.all(jnp.isfinite(d_t))))
 
@@ -482,9 +585,7 @@ class TestTDIResponseSegmentedTD(unittest.TestCase):
         delay = response.get_response_delay_td(
             lisa, times, theta, phi, None, combination="XYZ"
         )
-        rel_err = float(
-            jnp.max(jnp.abs(segmented - delay)) / jnp.max(jnp.abs(delay))
-        )
+        rel_err = float(jnp.max(jnp.abs(segmented - delay)) / jnp.max(jnp.abs(delay)))
         self.assertLess(rel_err, 1e-4)
 
     def test_unknown_combination_raises(self):

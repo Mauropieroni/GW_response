@@ -15,6 +15,14 @@ def finite_arm_transfer_function(
     :func:`gw_response.single_link_retarded.xi_k_no_G_retarded`: the finite-arm-length
     sinc/phase factor, given each pipeline's own `comb_plus`/`comb_minus` (its
     light-travel-time-like term, plus/minus the wavevector dotted with the arm).
+    Structurally the same finite-arm-length sinc/phase factor as Hartwig, Lilley,
+    Muratore & Pieroni (arXiv:2303.15929) eq. 2.14's
+    ``M_ij(f,k̂) = e^{iπfL_ij(1+k̂·l̂_ij)} sinc(πfL_ij(1+k̂·l̂_ij))``, though this
+    module splits the overall eq. 2.12 phase
+    across `finite_arm_transfer_function`/:func:`position_exponential`/the
+    light-travel-time prefactor differently than that equation's own `M_ij` split (the
+    combined kernel matches; cross-checked against `lisagwresponse` to floating-point
+    precision, see ``examples/compare_with_lisagwresponse.ipynb``).
 
     Args:
         comb_plus (jax.Array): `comb_plus`, with shape (configurations, arms, pixels).
@@ -39,7 +47,10 @@ def geometrical_factor(
     the geometrical antenna-pattern factor of the single-link response. Shared by the
     static (:mod:`gw_response.single_link_static`) and retarded
     (:mod:`gw_response.single_link_retarded`) pipelines -- this contraction doesn't
-    depend on the arm-length symmetry assumption either one makes.
+    depend on the arm-length symmetry assumption either one makes. Implements
+    Hartwig, Lilley, Muratore & Pieroni (arXiv:2303.15929) eq. 2.14's
+    ``G^A(k̂,l̂_ij) = (l̂_ij^a l̂_ij^b/2) e^A_ab(k̂)`` exactly, for `l̂_ij` = a unit arm
+    direction and `e^A` = `polarization_tensor`.
 
     Args:
         arms_matrix_rescaled (jax.Array): Detector arm vectors rescaled by the arm
@@ -107,7 +118,11 @@ def position_exponential(
     Computes the plane-wave phase factor picked up by each satellite due to its position
     relative to the detector-frame center. Shared by the static
     (:mod:`gw_response.single_link_static`) and retarded
-    (:mod:`gw_response.single_link_retarded`) pipelines.
+    (:mod:`gw_response.single_link_retarded`) pipelines. The same structural role as
+    Hartwig, Lilley, Muratore & Pieroni (arXiv:2303.15929) eq. 2.12's
+    ``e^{-2πifk̂·x⃗_i}`` factor (the receiving spacecraft's own position phase), though
+    see :func:`finite_arm_transfer_function` regarding this module's different split
+    of that equation's overall phase.
 
     Args:
         positions_detector_frame_rescaled (jax.Array): Satellite positions relative to

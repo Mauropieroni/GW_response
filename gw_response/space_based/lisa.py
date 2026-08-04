@@ -17,6 +17,7 @@ from gw_response.response_utils import (
     quadratic_from_linear,
 )
 from gw_response.utils import (
+    as_time_array,
     combine_single_link,
     load_numerical_orbits,
     project_noise_matrix,
@@ -132,13 +133,15 @@ class LISA(Detector):
                 self.orbit_file, self.orbit_interpolation_method
             )
 
-    def _vertex_positions(self, time_in_years: ArrayLike) -> jax.Array:
+    def vertex_positions(self, time_in_years: ArrayLike) -> jax.Array:
         """
         Calculates the positions of LISA satellites at a given time in years.
 
         Args:
             time_in_years (ArrayLike): The time at which the positions are to be
-                calculated, in years.
+                calculated, in years. Normalized via
+                :func:`gw_response.utils.as_time_array` (accepts a bare scalar or an
+                array).
 
         Returns:
             jax.Array: The positions of LISA satellites as calculated by the
@@ -147,6 +150,7 @@ class LISA(Detector):
                 `self.orbit_interpolator`/`self.keplerian_*` attributes as required by
                 that model).
         """
+        time_in_years = as_time_array(time_in_years)
         return LISA_satellite_positions(
             time_in_years,
             self.ps.AU,
@@ -158,13 +162,15 @@ class LISA(Detector):
             self.keplerian_chirality,
         )
 
-    def _detector_arms(self, time_in_years: ArrayLike) -> jax.Array:
+    def detector_arms(self, time_in_years: ArrayLike) -> jax.Array:
         """
         Computes the arm matrix of the LISA detector for a given time in years.
 
         Args:
             time_in_years (ArrayLike): The time at which the arm matrix is to be
-                computed, in years.
+                computed, in years. Normalized via
+                :func:`gw_response.utils.as_time_array` (accepts a bare scalar or an
+                array).
 
         Returns:
             jax.Array: The arm matrix of the LISA detector as calculated by the
@@ -173,6 +179,7 @@ class LISA(Detector):
                 `self.orbit_interpolator`/`self.keplerian_*` attributes as required by
                 that model).
         """
+        time_in_years = as_time_array(time_in_years)
         return LISA_arms_matrix(
             time_in_years,
             self.ps.AU,

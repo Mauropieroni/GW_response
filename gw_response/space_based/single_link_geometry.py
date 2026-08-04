@@ -2,30 +2,24 @@
 import jax
 import jax.numpy as jnp
 from functools import partial
-from typing import Any, Callable, TYPE_CHECKING
+from typing import Any, Callable
 
 from jax.typing import ArrayLike
 
 # Local imports
 from gw_response.constants import PhysicalConstants
-from gw_response.polarization import pc_tensors_and_signed_wavevector
+from gw_response.detector import Detector
+from gw_response.polarization import pc_tensors_and_wavevector
 from gw_response.response_utils import contract_with_h
 from gw_response.single_link_utils import geometrical_factor
-
-if TYPE_CHECKING:
-    from gw_response.detector import Detector
 
 # Update jax to use 64 bit precision
 jax.config.update("jax_enable_x64", True)
 
 
-# Single-link arm labels and their (receiver, emitter) satellite indices, for
-# a LISA-like 3-satellite, one-way-laser-link constellation. Matches
-# gw_response.utils.arms_matrix_from_vertex_positions's fixed arm ordering
-# and vertex-index convention (satellites 1, 2, 3): for arm label "ij" (a
-# two-digit int with digits i, j), the arm vector points from satellite i to
-# satellite j, and -- as validated against the independent `lisagwresponse`
-# package -- satellite j is the emitter and satellite i is the receiver.
+# Single-link arm labels and their (receiver, emitter) satellite indices, for a
+# LISA-like 3-satellite, one-way-laser-link constellation. Matches arm ordering and
+# vertex-index convention used in gw_response.utils.arms_matrix_from_vertex_positions
 _SINGLE_LINK_ARM_LABELS = (12, 23, 31, 21, 32, 13)
 
 
@@ -76,7 +70,14 @@ def all_arms_geometry(
     computation this replaces. The geometry shared by
     :func:`single_link_response_delay_td` (which evaluates the waveform at the
     resulting shifted times directly) and :func:`per_arm_linearized_geometry` (which
-    Taylor-expands these same quantities around a reference time via `jax.jvp`).
+    Taylor-expands these same quantities around a reference time via `jax.jvp`). The
+    exact, evolving-geometry time-domain evaluation of the delay whose lowest-order
+    (static-constellation) form is Hartwig, Lilley, Muratore & Pieroni
+    (arXiv:2303.15929) eq. 2.11's ``Δt_ij(t)``; `denom`'s ``2*(1 - n_vec.k)`` matches
+    the same combination in the independent `lisagwresponse` package's own direct
+    time-domain formula (see ``examples/compare_with_lisagwresponse.ipynb``), rather
+    than being written out explicitly in that equation's own (frequency-domain,
+    sky-integrated) form.
 
     Args:
         det (Detector): The detector the geometry is computed for.
@@ -102,7 +103,8 @@ def all_arms_geometry(
     receiver = receiver[0]  # (3, arms)
     emitter = receiver + arm_vector
 
-    n_vec = -arm_vector / jnp.linalg.norm(arm_vector, axis=0)  # emitter -> receiver
+    _, unit_arm_vector = Detector.arm_length_and_unit_vector(arm_vector, axis=0)
+    n_vec = -unit_arm_vector  # emitter -> receiver
     shift_rec = jnp.einsum("i,ij->j", k, receiver) / ps.light_speed
     shift_emi = ltt + jnp.einsum("i,ij->j", k, emitter) / ps.light_speed
     denom = 2 * (1 - jnp.einsum("i,ij->j", k, n_vec))
@@ -119,7 +121,9 @@ def _xi_plus_cross(
     frequency-domain static/retarded pipelines, which already combine this same
     contraction with a finite-arm-length transfer function) -- `geometrical_factor`
     bakes in a factor of ``1/2`` (from its own outer-product convention) that's
-    undone here to match this module's `xiplus`/`xicross` convention.
+    undone here to match this module's `xiplus`/`xicross` convention, i.e. Hartwig,
+    Lilley, Muratore & Pieroni (arXiv:2303.15929) eq. 2.14's ``G^A(k̂,l̂_ij)``
+    normalization directly (no extra ``1/2``).
 
     Args:
         n_vec (jax.Array): Unit arm direction(s), with shape (vectorial_index (3),
@@ -140,7 +144,6 @@ def per_arm_linearized_geometry(
     t_ref_years: ArrayLike,
     theta: ArrayLike,
     phi: ArrayLike,
-    wavevector_sign: ArrayLike,
     ps: PhysicalConstants,
 ) -> tuple[jax.Array, jax.Array]:
     """
@@ -157,7 +160,6 @@ def per_arm_linearized_geometry(
             from, in radians.
         phi (ArrayLike): Longitude of the single sky position the signal arrives from,
             in radians.
-        wavevector_sign (ArrayLike): Multiplies `unit_vec(theta, phi)`.
         ps (PhysicalConstants): Physical constants (`light_speed`, `yr`).
 
     Returns:
@@ -165,9 +167,7 @@ def per_arm_linearized_geometry(
             stacked in :data:`_SINGLE_LINK_ARM_LABELS` order, rows `(shift_rec,
             shift_emi, xiplus, xicross, denom)`.
     """
-    wavevector, p_plus, p_cross = pc_tensors_and_signed_wavevector(
-        theta, phi, wavevector_sign
-    )
+    wavevector, p_plus, p_cross = pc_tensors_and_wavevector(theta, phi)
     p_plus_mat = p_plus[0]
     p_cross_mat = p_cross[0]
     k = wavevector[:, 0]
@@ -192,8 +192,6 @@ def single_link_response_linearized(
     phi: ArrayLike,
     strain_td: Callable[[jax.Array, Any], tuple[jax.Array, jax.Array]],
     waveform_params: Any,
-    wavevector_sign: ArrayLike,
-    final_factor: ArrayLike,
 ) -> jax.Array:
     """
     Shared computation behind
@@ -221,16 +219,11 @@ def single_link_response_linearized(
             complex ``(h_plus, h_cross)`` quadratures at that time -- see
             :class:`gw_response.response_utils.Waveform`.
         waveform_params (Any): Source parameters passed through to `strain_td`.
-        wavevector_sign (ArrayLike): Multiplies `unit_vec(theta, phi)`.
-        final_factor (ArrayLike): Complex factor applied to the result just before
-            taking its real part.
 
     Returns:
         jax.Array: shape (time, arms=6), arm order :data:`_SINGLE_LINK_ARM_LABELS`.
     """
-    values, derivatives = per_arm_linearized_geometry(
-        det, t_ref_years, theta, phi, wavevector_sign, ps
-    )
+    values, derivatives = per_arm_linearized_geometry(det, t_ref_years, theta, phi, ps)
     shift_rec_ref, shift_emi_ref, xiplus_ref, xicross_ref, denom_ref = values
     dshift_rec, dshift_emi, dxiplus, dxicross, ddenom = derivatives
 
@@ -250,7 +243,21 @@ def single_link_response_linearized(
     termplus = h_plus_emi - h_plus_rec
     termcross = h_cross_emi - h_cross_rec
     y_complex = contract_with_h(xiplus, xicross, termplus, termcross) / denom
-    return jnp.real(y_complex * final_factor)
+    # No extra phase factor is needed here: h_from_amplitudes_phase embeds
+    # each quadrature so that Re() of the complex embedding already recovers
+    # the true physical real waveform value at that time (h_plus = amp*e^{i
+    # phase} has Re(h_plus) = amp*cos(phase); h_cross = -i*amp*e^{i phase}
+    # has Re(h_cross) = amp*sin(phase), the standard plus/cross real
+    # quadratures). Since xiplus/xicross/denom are all real, Re() distributes
+    # linearly through this whole real-weighted combination, so
+    # Re(y_complex) directly is the physical measurement -- no residual
+    # complex factor required. Other codes/conventions (e.g.
+    # `lisagwresponse`) may define an equivalent but differently-normalized
+    # real measurement, reconstructible from this function's real-valued
+    # output via a real overall scalar multiplication -- see
+    # ``examples/compare_with_lisagwresponse.ipynb`` for the explicit
+    # relationship.
+    return jnp.real(y_complex)
 
 
 @partial(jax.jit, static_argnums=(0, 5, 7))
@@ -263,18 +270,19 @@ def single_link_response_delay_td(
     strain_td: Callable[[jax.Array, Any], tuple[jax.Array, jax.Array]],
     waveform_params: Any,
     freeze_geometry: bool = False,
-    wavevector_sign: ArrayLike = 1.0,
-    final_factor: ArrayLike = 1j,
 ) -> jax.Array:
     """
     Single-link (not TDI-combined) time-domain response for a one-way-laser-link
     constellation (LISA, Taiji), computed by directly evaluating the waveform at each
     link's retarded emission/reception times and differencing -- ``h(t_emission) -
     h(t_reception)`` -- rather than building a frequency-domain transfer function. No
-    narrowband approximation: exact for arbitrarily evolving geometry. Cross-checked
-    against the independent `lisagwresponse` package
+    narrowband approximation: exact for arbitrarily evolving geometry, generalizing
+    Hartwig, Lilley, Muratore & Pieroni (arXiv:2303.15929) eq. 2.11-2.12's static-
+    constellation ``Δt_ij(t)``/``η_ij^GW(t)`` (see :func:`all_arms_geometry`). Cross-
+    checked against the independent `lisagwresponse` package
     (https://gitlab.in2p3.fr/lisa-simulation/gw-response) to floating-point precision
-    (via `wavevector_sign`/`final_factor`); see
+    (via the antipodal sky position ``(pi - theta, phi + pi)`` and a post-hoc real
+    scalar multiplication of the returned array); see
     ``examples/compare_with_lisagwresponse.ipynb``. Backs
     ``Response.get_single_link_response_delay_td``.
 
@@ -296,15 +304,18 @@ def single_link_response_delay_td(
             same reception time as the receiver, instead of backdating it by the
             light-travel time. The light-travel-time delay in the *phase* argument is
             still applied either way.
-        wavevector_sign (ArrayLike): Multiplies `unit_vec(theta, phi)` before it's used
-            as the wavevector; -1.0 reproduces `lisagwresponse`'s antiparallel
-            convention (see above).
-        final_factor (ArrayLike): Complex factor applied to the result just before
-            taking its real part; see above.
 
     Returns:
         jax.Array: The real single-link time-domain response, with shape (time, arms=6),
-            in arm order :data:`_SINGLE_LINK_ARM_LABELS` (12, 23, 31, 21, 32, 13).
+            in arm order :data:`_SINGLE_LINK_ARM_LABELS` (12, 23, 31, 21, 32, 13). Real
+            by construction (``jnp.real(y_complex)``): `xiplus`/`xicross`/`denom` are
+            real, and `h_from_amplitudes_phase`'s own embedding of each quadrature is
+            built so that `Re()` of the complex embedding already recovers the true
+            physical real waveform value -- see the comment above this function's
+            `jnp.real(y_complex)` line, or :func:`single_link_response_linearized`'s
+            (same convention), for the caveat on reconstructing a differently-
+            normalized real measurement (e.g. `lisagwresponse`'s) from this real-valued
+            output.
 
     Raises:
         ValueError: If `theta`/`phi` resolve to more than one sky position.
@@ -316,9 +327,7 @@ def single_link_response_delay_td(
 
     times_phase_seconds = times_in_years * ps.yr
 
-    wavevector, p_plus, p_cross = pc_tensors_and_signed_wavevector(
-        theta, phi, wavevector_sign
-    )
+    wavevector, p_plus, p_cross = pc_tensors_and_wavevector(theta, phi)
     p_plus_mat = p_plus[0]  # (3, 3), single sky position
     p_cross_mat = p_cross[0]
     k = wavevector[:, 0]  # (3,), single sky position
@@ -341,7 +350,11 @@ def single_link_response_delay_td(
     y_complex = jax.vmap(all_arms_at_sample)(
         times_in_years, times_phase_seconds
     )  # (time, arms)
-    return jnp.real(y_complex * final_factor)  # (time, arms)
+    # See single_link_response_linearized's own comment on why plain
+    # jnp.real(y_complex) -- no extra phase factor -- already recovers the
+    # physical measurement, given h_from_amplitudes_phase's own embedding
+    # convention.
+    return jnp.real(y_complex)  # (time, arms)
 
 
 def single_link_response_segmented_td(
@@ -353,8 +366,6 @@ def single_link_response_segmented_td(
     strain_td: Callable[[jax.Array, Any], tuple[jax.Array, jax.Array]],
     waveform_params: Any,
     segment_length: int,
-    wavevector_sign: ArrayLike = 1.0,
-    final_factor: ArrayLike = 1j,
 ) -> jax.Array:
     """
     Single-link (not TDI-combined) response for evolving detector geometry, via
@@ -383,13 +394,11 @@ def single_link_response_segmented_td(
         waveform_params (Any): Source parameters passed through to `strain_td`.
         segment_length (int): Number of samples per segment; must evenly divide
             `times_in_years`'s length.
-        wavevector_sign (ArrayLike): Multiplies `unit_vec(theta, phi)`; see
-            :func:`single_link_response_delay_td`.
-        final_factor (ArrayLike): Complex factor applied to each segment's result just
-            before taking its real part; see :func:`single_link_response_delay_td`.
 
     Returns:
-        jax.Array: shape (time, arms=6), arm order :data:`_SINGLE_LINK_ARM_LABELS`.
+        jax.Array: shape (time, arms=6), arm order :data:`_SINGLE_LINK_ARM_LABELS`. Uses
+            the library's own natural convention internally, same as
+            :func:`single_link_response_delay_td` -- see there.
 
     Raises:
         ValueError: If `segment_length` doesn't evenly divide the number of samples.
@@ -416,8 +425,6 @@ def single_link_response_segmented_td(
         phi=phi,
         strain_td=strain_td,
         waveform_params=waveform_params,
-        wavevector_sign=wavevector_sign,
-        final_factor=final_factor,
     )
 
     # (segments, segment_length, arms), already in time-major order

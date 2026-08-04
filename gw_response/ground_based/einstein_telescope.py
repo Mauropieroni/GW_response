@@ -13,7 +13,7 @@ orbiting. That means:
 
 Filling this in will likely mean picking whichever of `space_based/tdi.py`'s
 combination logic applies (or a triangular-specific readout of its own) and
-a `_vertex_positions`/`_detector_arms` implementation based on ET's fixed,
+a `vertex_positions`/`detector_arms` implementation based on ET's fixed,
 underground site geometry and orientation, wired into a concrete `Detector`
 the same way `ground_based/ligo.py` does for LIGO.
 """

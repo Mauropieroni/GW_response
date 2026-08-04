@@ -4,6 +4,7 @@ import jax.numpy as jnp
 from jax.typing import ArrayLike
 
 # Local imports
+from gw_response.detector import Detector
 from gw_response.polarization import (
     unit_vec,
     polarization_tensors_PC_angles,
@@ -30,7 +31,9 @@ def xi_k_no_G_retarded(
     """
     Retarded counterpart of :func:`gw_response.single_link_static.xi_k_no_G_static`: the
     finite-arm-length transfer function before the geometrical antenna-pattern factor is
-    applied, for a genuinely asymmetric arm.
+    applied, for a genuinely asymmetric arm. Generalizes Hartwig, Lilley, Muratore &
+    Pieroni (arXiv:2303.15929) eq. 2.14's ``M_ij`` (derived there for a static
+    constellation) to a moving detector with a genuinely asymmetric arm.
 
     Args:
         arm_vector_retarded_rescaled (jax.Array): Vector from the receiver's current
@@ -70,7 +73,9 @@ def xi_k_A_retarded(
     Retarded counterpart of :func:`gw_response.single_link_static.xi_k_A_static`: the
     single-link response kernel for a genuinely asymmetric arm (``12 != 21``), where the
     emitter's retarded arm length differs from the light-travel-time-derived
-    `ltt_rescaled`.
+    `ltt_rescaled`. Generalizes the ``ξ_ij^A`` kernel of Hartwig, Lilley, Muratore &
+    Pieroni (arXiv:2303.15929) eq. 2.13 beyond that equation's static-constellation
+    assumption, via the extra `length_correction` term below.
 
     Args:
         polarization_tensor (jax.Array): Polarization tensor, with shape (pixels,
@@ -93,8 +98,9 @@ def xi_k_A_retarded(
             x_vector, arms, pixels).
     """
     ltt_rescaled = jnp.asarray(ltt_rescaled)
-    arm_length_retarded_rescaled = jnp.linalg.norm(arm_vector_retarded_rescaled, axis=1)
-    unit_arm = arm_vector_retarded_rescaled / arm_length_retarded_rescaled[:, None, :]
+    arm_length_retarded_rescaled, unit_arm = Detector.arm_length_and_unit_vector(
+        arm_vector_retarded_rescaled, axis=1
+    )
 
     xi_no_G = xi_k_no_G_retarded(
         arm_vector_retarded_rescaled, ltt_rescaled, wavevector, x_vector
@@ -127,7 +133,9 @@ def single_link_response_retarded(
     Retarded counterpart of
     :func:`gw_response.single_link_static.single_link_response_static`: combines the
     retarded response kernel with the light-travel-time delay and receiver-position
-    phase factors.
+    phase factors. Generalizes the full single-link kernel of Hartwig, Lilley, Muratore
+    & Pieroni (arXiv:2303.15929) eq. 2.12 to a genuinely asymmetric, moving-detector
+    arm.
 
     Args:
         receiver_positions_rescaled (jax.Array): Receiver's position at each arm's own

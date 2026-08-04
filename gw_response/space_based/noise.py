@@ -5,18 +5,24 @@ import jax.numpy as jnp
 from jax.typing import ArrayLike
 
 # Local imports
-from gw_response.utils import arm_length_exponential, project_noise_matrix
+from gw_response.constants import PhysicalConstants
 from gw_response.space_based.tdi import tdi_matrix
+from gw_response.utils import arm_length_exponential, project_noise_matrix
 
 # Update jax configuration to enable 64-bit precision for numerical computations
 jax.config.update("jax_enable_x64", True)
+
+# Physical constants used in the noise computations
+ps = PhysicalConstants()
 
 
 @jax.jit
 def LISA_acceleration_noise(frequency: ArrayLike, acc_param: float = 3.0) -> jax.Array:
     """
     Computes the single test-mass acceleration noise power spectral density
-    for LISA, as a function of frequency.
+    for LISA, as a function of frequency: Hartwig, Lilley, Muratore & Pieroni
+    (arXiv:2303.15929) eq. 2.22a's ``S_ij^TM(f)`` (verified term-by-term against
+    that equation).
 
     Args:
         frequency (ArrayLike): Frequency values, in Hz, at which to evaluate
@@ -32,8 +38,9 @@ def LISA_acceleration_noise(frequency: ArrayLike, acc_param: float = 3.0) -> jax
 
     first = 1.0 + (4e-4 / frequency) ** 2
     second = 1.0 + (frequency / 8e-3) ** 4
-    third = (2.0 * jnp.pi * frequency) ** (-4) * (2.0 * jnp.pi * frequency / 3e8) ** 2
-    # TODO: Change 3e8 to ps.light_speed
+    third = (2.0 * jnp.pi * frequency) ** (-4) * (
+        2.0 * jnp.pi * frequency / ps.light_speed
+    ) ** 2
     return jnp.asarray(acc_param**2 * 1e-30 * first * second * third)
 
 
@@ -42,7 +49,9 @@ def LISA_interferometric_noise(
 ) -> jax.Array:
     """
     Computes the single-link interferometric (optical metrology system,
-    OMS) noise power spectral density for LISA, as a function of frequency.
+    OMS) noise power spectral density for LISA, as a function of frequency:
+    Hartwig, Lilley, Muratore & Pieroni (arXiv:2303.15929) eq. 2.22b's
+    ``S_ij^OMS(f)`` (verified term-by-term against that equation).
 
     Args:
         frequency (ArrayLike): Frequency values, in Hz, at which to evaluate
@@ -57,7 +66,7 @@ def LISA_interferometric_noise(
     """
 
     first = 1.0 + (2e-3 / frequency) ** 4
-    second = (2.0 * jnp.pi * frequency / 3e8) ** 2
+    second = (2.0 * jnp.pi * frequency / ps.light_speed) ** 2
 
     return jnp.asarray(inter_param**2 * 1e-24 * first * second)
 
@@ -72,7 +81,12 @@ def single_link_TM_acceleration_noise_variance(
     """
     Computes the single-link test-mass (acceleration) noise covariance
     matrix, including the cross-correlation between an arm and its
-    reverse-direction counterpart introduced by the light-travel-time delay.
+    reverse-direction counterpart introduced by the light-travel-time delay --
+    the ``D_ij n_ji^TM`` term of Hartwig, Lilley, Muratore & Pieroni
+    (arXiv:2303.15929) eq. 2.18's single-link noise combination, giving eq.
+    2.21a's diagonal (``S^η,N_ij,ij = S^OMS_ij + S^TM_ij + S^TM_ji``) and eq.
+    2.21b's off-diagonal (``S^η,N_ij,ji``, the delay-factor cross term) entries
+    for the TM contribution.
 
     Args:
         frequency (ArrayLike): Frequency values, in Hz, at which to evaluate
@@ -161,7 +175,9 @@ def single_link_OMS_noise_variance(
     Computes the single-link interferometric (OMS) noise covariance matrix.
 
     Unlike the test-mass noise, the OMS noise is uncorrelated between arms,
-    so the resulting covariance matrix is diagonal.
+    so the resulting covariance matrix is diagonal -- matching Hartwig, Lilley,
+    Muratore & Pieroni (arXiv:2303.15929) eq. 2.20a, which gives the OMS noise
+    CSD only a diagonal (auto-correlation) term.
 
     Args:
         frequency (ArrayLike): Frequency values, in Hz, at which to evaluate
@@ -198,7 +214,9 @@ def tdi_projection(
     x_vector: ArrayLike,
 ) -> jax.Array:
     """
-    Projects a single-link noise covariance matrix onto a TDI combination.
+    Projects a single-link noise covariance matrix onto a TDI combination:
+    Hartwig, Lilley, Muratore & Pieroni (arXiv:2303.15929) eq. 2.29b/2.30's
+    ``S^UV,N = C^UV S^η,N``.
 
     Args:
         TDI_idx (ArrayLike): Index into :data:`gw_response.space_based.tdi.TDI_map`

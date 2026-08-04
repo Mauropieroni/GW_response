@@ -11,7 +11,10 @@ jax.config.update("jax_enable_x64", True)
 def unit_vec(theta: ArrayLike, phi: ArrayLike) -> jax.Array:
     """
     Computes the unit wavevector pointing from the sky towards the detector for each
-    requested sky position.
+    requested sky position -- the sky-position unit vector k̂ used throughout Hartwig,
+    Lilley, Muratore & Pieroni (arXiv:2303.15929) Sec. II A (e.g. eq. 2.8's plane-wave
+    decomposition); that paper leaves k̂'s sign convention implicit, so this isn't cited
+    to a specific equation for the sign itself.
 
     Args:
         theta (float or ArrayLike): Colatitude(s) of the sky position(s), in radians.
@@ -36,8 +39,22 @@ def uv_analytical(theta: ArrayLike, phi: ArrayLike) -> tuple[jax.Array, jax.Arra
     Computes the two unit vectors spanning the plane transverse to the propagation
     direction, for each requested sky position.
 
-    These vectors (u, v) form, together with the wavevector from :func:`unit_vec`, an
-    orthonormal triad used to build the gravitational wave polarization basis.
+    These vectors (u, v) form, together with the wavevector from :func:`unit_vec`, a
+    right-handed orthonormal triad (``u x v = unit_vec(theta, phi)``) used to build the
+    gravitational wave polarization basis -- matching the LDC Manual's (LISA-LCST-SGS-
+    MAN-001) Sec. 6.1.2 convention that its own ``(u, v, k)`` be a direct triad, once
+    its ``k = -unit_vec(theta, phi)`` antiparallel convention (reproducible by
+    evaluating this whole package at the antipodal sky position ``(pi - theta, phi +
+    pi)`` instead, rather than any parameter here) is accounted for: flipping the sign
+    of one wavevector (k -> -k) requires flipping exactly one of its two transverse
+    partners to keep the triad's handedness consistent, which is why only `dk_dphi`
+    (not `dk_dtheta`) carries a relative sign here. Equivalently (verified numerically,
+    not just by matching variable names), this is the same right-handed construction as
+    Hartwig, Lilley, Muratore & Pieroni (arXiv:2303.15929) eq. 2.9's ``û(k̂) = (k̂ x
+    ê_z)/|k̂ x ê_z|``, ``v̂(k̂) = k̂ x û``: their ``(û, v̂)`` relate to this function's
+    ``(dk_dtheta, dk_dphi)`` as ``dk_dtheta = v̂`` and ``dk_dphi = -û`` (a swap, with
+    `dk_dphi` carrying an extra sign) -- not a literal name-for-name match, but the same
+    right-handed triad construction relative to ``k̂``.
 
     Args:
         theta (float or ArrayLike): Colatitude(s) of the sky position(s), in radians.
@@ -57,7 +74,7 @@ def uv_analytical(theta: ArrayLike, phi: ArrayLike) -> tuple[jax.Array, jax.Arra
             -jnp.sin(theta),
         ]
     ).T
-    dk_dphi = jnp.array([jnp.sin(phi), -jnp.cos(phi), 0.0 * phi]).T
+    dk_dphi = jnp.array([-jnp.sin(phi), jnp.cos(phi), 0.0 * phi]).T
 
     # The output will be pixels, vectorial index
     return dk_dtheta, dk_dphi
@@ -107,7 +124,10 @@ def polarization_vectors_angles(
 @jax.jit
 def polarization_tensors_PC(u: jax.Array, v: jax.Array) -> tuple[jax.Array, jax.Array]:
     """
-    Computes the plus/cross gravitational wave polarization tensors.
+    Computes the plus/cross gravitational wave polarization tensors: Hartwig, Lilley,
+    Muratore & Pieroni (arXiv:2303.15929) eq. 2.10's ``e^+_ab = û_a û_b - v̂_a v̂_b``,
+    ``e^×_ab = û_a v̂_b + v̂_a û_b`` exactly, with no residual normalization
+    difference.
 
     Args:
         u (jax.Array): First transverse unit vector, shape (pixels, vectorial_index
@@ -124,7 +144,7 @@ def polarization_tensors_PC(u: jax.Array, v: jax.Array) -> tuple[jax.Array, jax.
     e1c = jnp.einsum("...i,...j->...ij", u, v) + jnp.einsum("...i,...j->...ij", v, u)
 
     # The output will be pixels, vectorial index, vectorial index
-    return e1p / jnp.sqrt(2), e1c / jnp.sqrt(2)
+    return e1p, e1c
 
 
 @jax.jit
@@ -151,7 +171,12 @@ def polarization_tensors_PC_angles(
 @jax.jit
 def polarization_tensors_LR(u: jax.Array, v: jax.Array) -> tuple[jax.Array, jax.Array]:
     """
-    Computes the left/right circular gravitational wave polarization tensors.
+    Computes the left/right circular gravitational wave polarization tensors: Hartwig,
+    Lilley, Muratore & Pieroni (arXiv:2303.15929) eq. 2.10's ``e^{L/R}_ab = e^+_ab ∓
+    i*e^×_ab`` exactly, with no residual normalization difference. Built directly from
+    :func:`polarization_tensors_PC`'s (unnormalized) ``e_plus``/``e_cross`` rather than
+    by squaring :func:`polarization_vectors`' separately-normalized ``(u ∓ i v) /
+    sqrt(2)`` vectors, which would reintroduce an extra factor of 1/2.
 
     Args:
         u (jax.Array): First transverse unit vector, shape (pixels, vectorial_index
@@ -164,9 +189,9 @@ def polarization_tensors_LR(u: jax.Array, v: jax.Array) -> tuple[jax.Array, jax.
             vectorial_index (3), vectorial_index (3)), giving the left and right
             circular polarization tensors for every sky position.
     """
-    first, second = polarization_vectors(u, v)
-    e1L = jnp.einsum("...i,...j->...ij", first, first)
-    e1R = jnp.einsum("...i,...j->...ij", second, second)
+    e_plus, e_cross = polarization_tensors_PC(u, v)
+    e1L = e_plus - 1j * e_cross
+    e1R = e_plus + 1j * e_cross
 
     # The output will be pixels, vectorial index, vectorial index
     return e1L, e1R
@@ -193,60 +218,56 @@ def polarization_tensors_LR_angles(
     return polarization_tensors_LR(u, v)
 
 
-def pc_tensors_and_signed_wavevector(
-    theta: ArrayLike, phi: ArrayLike, wavevector_sign: ArrayLike
+def pc_tensors_and_wavevector(
+    theta: ArrayLike, phi: ArrayLike
 ) -> tuple[jax.Array, jax.Array, jax.Array]:
     """
-    Plus/cross polarization tensors and the (optionally sign-flipped) unit wavevector
-    for a sky position.
+    Plus/cross polarization tensors and the unit wavevector for a sky position.
 
     Args:
         theta (ArrayLike): Colatitude(s) of the sky position(s), in radians.
         phi (ArrayLike): Longitude(s) of the sky position(s), in radians.
-        wavevector_sign (ArrayLike): Multiplies `unit_vec(theta, phi)`.
 
     Returns:
         tuple: ``(wavevector, p_plus, p_cross)``.
     """
     u, v = uv_analytical(theta, phi)
     p_plus, p_cross = polarization_tensors_PC(u, v)
-    wavevector = wavevector_sign * unit_vec(theta, phi)
+    wavevector = unit_vec(theta, phi)
     return wavevector, p_plus, p_cross
 
 
-def lr_tensors_and_signed_wavevector(
-    theta: ArrayLike, phi: ArrayLike, wavevector_sign: ArrayLike
+def lr_tensors_and_wavevector(
+    theta: ArrayLike, phi: ArrayLike
 ) -> tuple[jax.Array, jax.Array, jax.Array]:
     """
-    Left/right polarization tensors and the (optionally sign-flipped) unit wavevector
-    for a sky position. LR sibling of :func:`pc_tensors_and_signed_wavevector`.
+    Left/right polarization tensors and the unit wavevector for a sky position. LR
+    sibling of :func:`pc_tensors_and_wavevector`.
 
     Args:
         theta (ArrayLike): Colatitude(s) of the sky position(s), in radians.
         phi (ArrayLike): Longitude(s) of the sky position(s), in radians.
-        wavevector_sign (ArrayLike): Multiplies `unit_vec(theta, phi)`.
 
     Returns:
         tuple: ``(wavevector, p_L, p_R)``.
     """
     u, v = uv_analytical(theta, phi)
     p_L, p_R = polarization_tensors_LR(u, v)
-    wavevector = wavevector_sign * unit_vec(theta, phi)
+    wavevector = unit_vec(theta, phi)
     return wavevector, p_L, p_R
 
 
-def polarization_tensors_and_signed_wavevector(
-    polarization: str, theta: ArrayLike, phi: ArrayLike, wavevector_sign: ArrayLike
+def polarization_tensors_and_wavevector(
+    polarization: str, theta: ArrayLike, phi: ArrayLike
 ) -> tuple[jax.Array, jax.Array, jax.Array]:
     """
-    Dispatches to :func:`pc_tensors_and_signed_wavevector` or
-    :func:`lr_tensors_and_signed_wavevector` for the requested polarization basis.
+    Dispatches to :func:`pc_tensors_and_wavevector` or
+    :func:`lr_tensors_and_wavevector` for the requested polarization basis.
 
     Args:
         polarization (str): "PC" or "LR" (case-insensitive).
         theta (ArrayLike): Colatitude(s) of the sky position(s), in radians.
         phi (ArrayLike): Longitude(s) of the sky position(s), in radians.
-        wavevector_sign (ArrayLike): Multiplies `unit_vec(theta, phi)`.
 
     Returns:
         tuple: ``(wavevector, p1, p2)``, `p1`/`p2` its two polarization tensors (e.g.
@@ -257,7 +278,7 @@ def polarization_tensors_and_signed_wavevector(
     """
     pol = polarization.upper()
     if pol == "PC":
-        return pc_tensors_and_signed_wavevector(theta, phi, wavevector_sign)
+        return pc_tensors_and_wavevector(theta, phi)
     elif pol == "LR":
-        return lr_tensors_and_signed_wavevector(theta, phi, wavevector_sign)
+        return lr_tensors_and_wavevector(theta, phi)
     raise ValueError("Incorrect polarization type")

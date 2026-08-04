@@ -10,7 +10,7 @@ from typing import Any, TYPE_CHECKING
 from jax.typing import ArrayLike
 
 from gw_response.constants import PhysicalConstants
-from gw_response.polarization import polarization_tensors_and_signed_wavevector
+from gw_response.polarization import polarization_tensors_and_wavevector
 from gw_response.response_utils import (
     contract_with_h,
     Waveform,
@@ -75,162 +75,36 @@ class Response(object):
     def __eq__(self, other: object) -> bool:
         return self is other
 
-    def get_response(
-        self,
-        det: "Detector",
-        theta: ArrayLike,
-        phi: ArrayLike,
-        waveform_params: Any,
-        which_domain: str = "TD",
-        which_method: str = "delay",
-        which_TDI: str | None = None,
-        TDI_order: float = 1.5,
-        times_in_years: ArrayLike | None = None,
-        frequency_array: ArrayLike | None = None,
-        segment_length: int | None = None,
-        wavevector_sign: ArrayLike = 1.0,
-        final_factor: ArrayLike = 1j,
-        polarization: str = "PC",
-    ) -> jax.Array:
-        """
-        High-level entry point: projects :attr:`waveform` (set beforehand) onto a
-        detector's readout channel(s), in whichever domain/method/TDI combination is
-        requested, by delegating to the specific worker method below -- see that
-        method's own docstring for the full derivation/conventions. `which_domain="TD"`
-        is exact for evolving geometry (see :meth:`get_response_delay_td`) or, via
-        `which_method="segmented"`, faster and not much less accurate (see
-        :meth:`get_response_segmented_td`); `which_domain="FD"` is natively
-        frequency-domain (see :meth:`get_response_fd`).
-
-        Args:
-            det (Detector): The detector (e.g. LISA, LIGO) the response is computed for.
-            theta (ArrayLike): Colatitude(s) of the sky position(s), in radians.
-            phi (ArrayLike): Longitude(s) of the sky position(s), in radians.
-            waveform_params (Any): Source parameters passed through to
-                `waveform.strain_td`/`waveform.strain_fd`.
-            which_domain (str, optional): "TD" or "FD". Default is "TD".
-            which_method (str, optional): "delay" or "segmented"; only used for
-                `which_domain="TD"`. Default is "delay".
-            which_TDI (str, optional): Name of the readout combination (e.g. a TDI
-                variable like "XYZ"/"AET" for LISA, or "Michelson" for LIGO). Defaults
-                to ``det.default_combination``.
-            TDI_order (float, optional): 1.5 or 2.0; only used for
-                `which_method="delay"` -- see :meth:`get_response_delay_td`.
-                `which_method="segmented"` only supports 1.5. Default is 1.5.
-            times_in_years (ArrayLike, optional): Time(s), in years -- required for both
-                `which_domain="TD"` and `which_domain="FD"` (for the latter, the single
-                time the detector configuration is frozen at).
-            frequency_array (ArrayLike, optional): Frequency values, in Hz -- required
-                for `which_domain="FD"`.
-            segment_length (int, optional): Number of samples per segment; required for
-                `which_method="segmented"` -- see :meth:`get_response_segmented_td`.
-            wavevector_sign (ArrayLike): see :meth:`get_response_delay_td`. Only used
-                for `which_domain="TD"`.
-            final_factor (ArrayLike): see :meth:`get_response_delay_td`. Only used for
-                `which_domain="TD"`.
-            polarization (str, optional): "PC" or "LR". Only used for `which_domain=
-                "FD"`. Default is "PC".
-
-        Returns:
-            jax.Array: The response, with shape and domain depending on
-                `which_domain` -- see the delegated method's own docstring.
-
-        Raises:
-            ValueError: If `which_domain`/`which_method` isn't recognized, or a
-                required argument for the selected domain/method is missing, or
-                `which_method="segmented"` is combined with `TDI_order=2.0`.
-        """
-        combination = which_TDI or det.default_combination
-
-        if which_domain == "TD":
-            if times_in_years is None:
-                raise ValueError(
-                    "get_response requires times_in_years for which_domain='TD'."
-                )
-            if which_method == "delay":
-                return self.get_response_delay_td(
-                    det,
-                    times_in_years,
-                    theta,
-                    phi,
-                    waveform_params,
-                    combination=combination,
-                    tdi_order=TDI_order,
-                    wavevector_sign=wavevector_sign,
-                    final_factor=final_factor,
-                )
-            if which_method == "segmented":
-                if segment_length is None:
-                    raise ValueError(
-                        "get_response requires segment_length for "
-                        "which_method='segmented'."
-                    )
-                if TDI_order != 1.5:
-                    raise ValueError(
-                        "get_response only supports TDI_order=1.5 for "
-                        "which_method='segmented'."
-                    )
-                return self.get_response_segmented_td(
-                    det,
-                    times_in_years,
-                    theta,
-                    phi,
-                    waveform_params,
-                    segment_length,
-                    combination=combination,
-                    wavevector_sign=wavevector_sign,
-                    final_factor=final_factor,
-                )
-            raise ValueError(
-                f"Unknown which_method '{which_method}'; expected 'delay' or "
-                "'segmented'."
-            )
-        if which_domain == "FD":
-            if times_in_years is None or frequency_array is None:
-                raise ValueError(
-                    "get_response requires times_in_years and frequency_array for "
-                    "which_domain='FD'."
-                )
-            return self.get_response_fd(
-                det,
-                times_in_years,
-                theta,
-                phi,
-                waveform_params,
-                frequency_array,
-                combination=combination,
-                polarization=polarization,
-            )
-        raise ValueError(
-            f"Unknown which_domain '{which_domain}'; expected 'TD' or 'FD'."
-        )
-
     @partial(jax.jit, static_argnums=(0, 1, 6))
     def get_single_link_response_fd(
         self,
         det: "Detector",
         times_in_years: ArrayLike,
-        theta_array: ArrayLike,
-        phi_array: ArrayLike,
-        frequency_array: ArrayLike,
+        theta_array: jax.Array,
+        phi_array: jax.Array,
+        frequency_array: jax.Array,
         polarization: str = "LR",
     ) -> dict[str, jax.Array]:
         """
         Per-link, per-pixel strain response to a GW arriving from (theta_array,
-        phi_array), for each polarization mode. Uses the exact retarded geometry
+        phi_array), for each polarization mode -- the ``ξ_ij^A``-based single-link
+        kernel of Hartwig, Lilley, Muratore & Pieroni (arXiv:2303.15929) eqs. 2.12-2.15
+        (see `get_single_link_response_retarded`/`single_link_static` for the exact
+        per-equation mapping). Uses the exact retarded geometry
         (`detector_arms_retarded` + `get_single_link_response_retarded`), which
         reduces to the symmetric-arm pipeline in :mod:`gw_response.single_link_static`
         for a non-moving detector (LIGO) -- unless `det.long_wavelength_approximation`
         is set, in which case `get_single_link_response_long_wavelength` is used
-        instead.
+        instead (not itself tied to a specific equation in that paper -- see its own
+        docstring).
 
         Args:
             det (Detector): The detector (e.g. LISA, LIGO) the response is computed for.
             times_in_years (ArrayLike): Time(s), in years, at which to evaluate the
                 vertex positions and detector arms.
-            theta_array (ArrayLike): Colatitude(s) of the sky position(s), in radians.
-            phi_array (ArrayLike): Longitude(s) of the sky position(s), in radians.
-            frequency_array (ArrayLike): Frequency values, in Hz, at which to evaluate
+            theta_array (jax.Array): Colatitude(s) of the sky position(s), in radians.
+            phi_array (jax.Array): Longitude(s) of the sky position(s), in radians.
+            frequency_array (jax.Array): Frequency values, in Hz, at which to evaluate
                 the response.
             polarization (str, optional): "LR" or "PC". Default is "LR".
 
@@ -242,9 +116,8 @@ class Response(object):
             ValueError: If `polarization` is not "LR" or "PC".
         """
         x_vector = det.x(frequency_array)
-
-        wavevector, p1, p2 = polarization_tensors_and_signed_wavevector(
-            polarization, theta_array, phi_array, 1.0
+        wavevector, p1, p2 = polarization_tensors_and_wavevector(
+            polarization, theta_array, phi_array
         )
 
         pol = polarization.upper()
@@ -281,9 +154,9 @@ class Response(object):
         self,
         det: "Detector",
         times_in_years: ArrayLike,
-        theta_array: ArrayLike,
-        phi_array: ArrayLike,
-        frequency_array: ArrayLike,
+        theta_array: jax.Array,
+        phi_array: jax.Array,
+        frequency_array: jax.Array,
         polarization: str = "LR",
         combination: str | None = None,
     ) -> dict[str, jax.Array]:
@@ -291,15 +164,18 @@ class Response(object):
         Computes the linear integrand for a GW arriving from (theta_array, phi_array),
         for each polarization, projected onto a readout combination (e.g. a TDI variable
         like "XYZ"/"AET" for LISA, or "Michelson" for LIGO) via
-        `det.linear_response_from_single_link`.
+        `det.linear_response_from_single_link` -- Hartwig, Lilley, Muratore & Pieroni
+        (arXiv:2303.15929) eq. 2.27's ``V(f) = Σ c^V_ij η_ij(f)`` TDI-variable
+        combination, generalized to any `Detector`'s own readout combination via
+        `det.combination_matrix` (see :class:`gw_response.detector.Detector`).
 
         Args:
             det (Detector): The detector (e.g. LISA, LIGO) the response is computed for.
             times_in_years (ArrayLike): Time(s), in years, at which to evaluate the
                 vertex positions and detector arms.
-            theta_array (ArrayLike): Colatitude(s) of the sky position(s), in radians.
-            phi_array (ArrayLike): Longitude(s) of the sky position(s), in radians.
-            frequency_array (ArrayLike): Frequency values, in Hz, at which to evaluate
+            theta_array (jax.Array): Colatitude(s) of the sky position(s), in radians.
+            phi_array (jax.Array): Longitude(s) of the sky position(s), in radians.
+            frequency_array (jax.Array): Frequency values, in Hz, at which to evaluate
                 the response.
             polarization (str, optional): "LR" or "PC". Default is "LR".
             combination (str, optional): Name of the readout combination. Defaults to
@@ -327,104 +203,14 @@ class Response(object):
 
         return det.linear_response_from_single_link(single_link, combination_matrix)
 
-    @partial(jax.jit, static_argnums=(0, 1, 6, 7))
-    def get_quadratic_integrand_fd(
-        self,
-        det: "Detector",
-        times_in_years: ArrayLike,
-        theta_array: ArrayLike,
-        phi_array: ArrayLike,
-        frequency_array: ArrayLike,
-        polarization: str = "LR",
-        combination: str | None = None,
-    ) -> dict[str, jax.Array]:
-        """
-        Sky-resolved quadratic response integrand for a GW arriving from (theta_array,
-        phi_array), for each polarization, projected onto a readout combination: builds
-        the linear integrand (see :meth:`get_linear_integrand_fd`), then applies
-        `det.quadratic_response_from_single_link` to it.
-
-        Args:
-            det (Detector): The detector (e.g. LISA, LIGO) the response is computed for.
-            times_in_years (ArrayLike): Time(s), in years, at which to evaluate the
-                vertex positions and detector arms.
-            theta_array (ArrayLike): Colatitude(s) of the sky position(s), in radians.
-            phi_array (ArrayLike): Longitude(s) of the sky position(s), in radians.
-            frequency_array (ArrayLike): Frequency values, in Hz, at which to evaluate
-                the response.
-            polarization (str, optional): "LR" or "PC". Default is "LR".
-            combination (str, optional): Name of the readout combination. Defaults to
-                ``det.default_combination``.
-
-        Returns:
-            dict: Maps each doubled polarization letter (e.g. "LL", "RR") to the
-                sky-resolved quadratic response, with shape (configurations, x_vector,
-                channels, channels, pixels).
-        """
-        linear = self.get_linear_integrand_fd(
-            det,
-            times_in_years,
-            theta_array,
-            phi_array,
-            frequency_array,
-            polarization=polarization,
-            combination=combination,
-        )
-        return det.quadratic_response_from_single_link(linear)
-
-    @partial(jax.jit, static_argnums=(0, 1, 6, 7))
-    def get_quadratic_integrated_fd(
-        self,
-        det: "Detector",
-        times_in_years: ArrayLike,
-        theta_array: ArrayLike,
-        phi_array: ArrayLike,
-        frequency_array: ArrayLike,
-        polarization: str = "LR",
-        combination: str | None = None,
-    ) -> dict[str, jax.Array]:
-        """
-        Sky-averaged quadratic response for a GW arriving from (theta_array, phi_array),
-        for each polarization, projected onto a readout combination: builds the
-        quadratic integrand (see :meth:`get_quadratic_integrand_fd`), then applies
-        `det.integrate_quadratic_response` to it.
-
-        Args:
-            det (Detector): The detector (e.g. LISA, LIGO) the response is computed for.
-            times_in_years (ArrayLike): Time(s), in years, at which to evaluate the
-                vertex positions and detector arms.
-            theta_array (ArrayLike): Colatitude(s) of the sky position(s), in radians.
-            phi_array (ArrayLike): Longitude(s) of the sky position(s), in radians.
-            frequency_array (ArrayLike): Frequency values, in Hz, at which to evaluate
-                the response.
-            polarization (str, optional): "LR" or "PC". Default is "LR".
-            combination (str, optional): Name of the readout combination. Defaults to
-                ``det.default_combination``.
-
-        Returns:
-            dict: Maps each doubled polarization letter (e.g. "LL", "RR") to the
-                sky-averaged quadratic response, with shape (configurations, x_vector,
-                channels, channels).
-        """
-        quadratic = self.get_quadratic_integrand_fd(
-            det,
-            times_in_years,
-            theta_array,
-            phi_array,
-            frequency_array,
-            polarization=polarization,
-            combination=combination,
-        )
-        return det.integrate_quadratic_response(quadratic)
-
     def get_response_fd(
         self,
         det: "Detector",
         time_in_years: ArrayLike,
-        theta: ArrayLike,
-        phi: ArrayLike,
+        theta: jax.Array,
+        phi: jax.Array,
         waveform_params: Any,
-        frequency_array: ArrayLike,
+        frequency_array: jax.Array,
         combination: str | None = None,
         polarization: str = "PC",
     ) -> jax.Array:
@@ -441,13 +227,13 @@ class Response(object):
             det (Detector): The detector (e.g. LISA, LIGO) the response is computed for.
             time_in_years (ArrayLike): Time(s), in years, at which the detector
                 configuration is frozen.
-            theta (ArrayLike): Colatitude(s) of the sky position(s) the signal arrives
+            theta (jax.Array): Colatitude(s) of the sky position(s) the signal arrives
                 from, in radians.
-            phi (ArrayLike): Longitude(s) of the sky position(s) the signal arrives
+            phi (jax.Array): Longitude(s) of the sky position(s) the signal arrives
                 from, in radians.
             waveform_params (Any): Source parameters passed through to
                 `waveform.strain_fd`.
-            frequency_array (ArrayLike): Frequency values, in Hz, at which to evaluate
+            frequency_array (jax.Array): Frequency values, in Hz, at which to evaluate
                 the response.
             combination (str, optional): Name of the readout combination. Defaults to
                 ``det.default_combination``.
@@ -494,12 +280,10 @@ class Response(object):
         self,
         det: "Detector",
         times_in_years: jax.Array,
-        theta: ArrayLike,
-        phi: ArrayLike,
+        theta: jax.Array,
+        phi: jax.Array,
         waveform_params: Any,
         freeze_geometry: bool = False,
-        wavevector_sign: ArrayLike = 1.0,
-        final_factor: ArrayLike = 1j,
     ) -> jax.Array:
         """
         Single-link (not TDI-combined) time-domain response for a LISA-like,
@@ -525,7 +309,10 @@ class Response(object):
         Returns:
             jax.Array: The real single-link time-domain response, with shape (time,
                 arms=6), in arm order :data:`_SINGLE_LINK_ARM_LABELS` (12, 23, 31, 21,
-                32, 13).
+                32, 13). Real by construction (``jnp.real(y_complex)``, no residual
+                phase factor needed) -- see `single_link_response_delay_td`'s
+                docstring/comments for the caveat on reconstructing other conventions'
+                differently-normalized real output.
 
         Raises:
             ValueError: If `theta`/`phi` resolve to more than one sky position, or if
@@ -546,29 +333,25 @@ class Response(object):
             strain_td,
             waveform_params,
             freeze_geometry,
-            wavevector_sign,
-            final_factor,
         )
 
     def get_response_delay_td(
         self,
         det: "Detector",
         times_in_years: ArrayLike,
-        theta: ArrayLike,
-        phi: ArrayLike,
+        theta: jax.Array,
+        phi: jax.Array,
         waveform_params: Any,
         combination: str = "XYZ",
         tdi_order: float = 1.5,
-        wavevector_sign: ArrayLike = 1.0,
-        final_factor: ArrayLike = 1j,
     ) -> jax.Array:
         """
         TDI-combined time-domain response for a LISA-like constellation, exact for
         genuinely evolving geometry -- see `tdi_response_delay_td` (in
         :mod:`gw_response.space_based.tdi`), which this delegates to
         (with `strain_td` taken from :attr:`waveform`, set beforehand), for the TDI 1.5
-        and 2.0 delay-operator formulas this implements (Muratore, Vetrugno & Vitale,
-        arXiv:2303.15929, eqs. 2.24 and 2.23) and their reuse of
+        and 2.0 delay-operator formulas this implements (Hartwig, Lilley, Muratore &
+        Pieroni, arXiv:2303.15929, eqs. 2.24 and 2.23) and their reuse of
         :meth:`get_single_link_response_delay_td`.
 
         Left unjitted so that reassigning :attr:`waveform` between calls is always
@@ -602,20 +385,16 @@ class Response(object):
             waveform_params,
             combination,
             tdi_order,
-            wavevector_sign,
-            final_factor,
         )
 
     def get_single_link_response_segmented_td(
         self,
         det: "Detector",
         times_in_years: jax.Array,
-        theta: ArrayLike,
-        phi: ArrayLike,
+        theta: jax.Array,
+        phi: jax.Array,
         waveform_params: Any,
         segment_length: int,
-        wavevector_sign: ArrayLike = 1.0,
-        final_factor: ArrayLike = 1j,
     ) -> jax.Array:
         """
         Single-link (not TDI-combined) response for evolving detector geometry, via
@@ -652,21 +431,17 @@ class Response(object):
             strain_td,
             waveform_params,
             segment_length,
-            wavevector_sign,
-            final_factor,
         )
 
     def get_response_segmented_td(
         self,
         det: "Detector",
         times_in_years: ArrayLike,
-        theta: ArrayLike,
-        phi: ArrayLike,
+        theta: jax.Array,
+        phi: jax.Array,
         waveform_params: Any,
         segment_length: int,
         combination: str = "XYZ",
-        wavevector_sign: ArrayLike = 1.0,
-        final_factor: ArrayLike = 1j,
     ) -> jax.Array:
         """
         TDI 1.5 time-domain response for a LISA-like constellation, via
@@ -709,17 +484,231 @@ class Response(object):
             waveform_params,
             segment_length,
             combination,
-            wavevector_sign,
-            final_factor,
         )
+
+    def get_response(
+        self,
+        det: "Detector",
+        theta: jax.Array,
+        phi: jax.Array,
+        waveform_params: Any,
+        which_domain: str = "TD",
+        which_method: str = "delay",
+        which_TDI: str | None = None,
+        TDI_order: float = 1.5,
+        times_in_years: ArrayLike | None = None,
+        frequency_array: jax.Array | None = None,
+        segment_length: int | None = None,
+        polarization: str = "PC",
+    ) -> jax.Array:
+        """
+        High-level entry point: projects :attr:`waveform` (set beforehand) onto a
+        detector's readout channel(s), in whichever domain/method/TDI combination is
+        requested, by delegating to the specific worker method below -- see that
+        method's own docstring for the full derivation/conventions. `which_domain="TD"`
+        is exact for evolving geometry (see :meth:`get_response_delay_td`) or, via
+        `which_method="segmented"`, faster and not much less accurate (see
+        :meth:`get_response_segmented_td`); `which_domain="FD"` is natively
+        frequency-domain (see :meth:`get_response_fd`).
+
+        Args:
+            det (Detector): The detector (e.g. LISA, LIGO) the response is computed for.
+            theta (jax.Array): Colatitude(s) of the sky position(s), in radians.
+            phi (jax.Array): Longitude(s) of the sky position(s), in radians.
+            waveform_params (Any): Source parameters passed through to
+                `waveform.strain_td`/`waveform.strain_fd`.
+            which_domain (str, optional): "TD" or "FD". Default is "TD".
+            which_method (str, optional): "delay" or "segmented"; only used for
+                `which_domain="TD"`. Default is "delay".
+            which_TDI (str, optional): Name of the readout combination (e.g. a TDI
+                variable like "XYZ"/"AET" for LISA, or "Michelson" for LIGO). Defaults
+                to ``det.default_combination``.
+            TDI_order (float, optional): 1.5 or 2.0; only used for
+                `which_method="delay"` -- see :meth:`get_response_delay_td`.
+                `which_method="segmented"` only supports 1.5. Default is 1.5.
+            times_in_years (ArrayLike, optional): Time(s), in years -- required for both
+                `which_domain="TD"` and `which_domain="FD"` (for the latter, the single
+                time the detector configuration is frozen at).
+            frequency_array (jax.Array, optional): Frequency values, in Hz -- required
+                for `which_domain="FD"`.
+            segment_length (int, optional): Number of samples per segment; required for
+                `which_method="segmented"` -- see :meth:`get_response_segmented_td`.
+            polarization (str, optional): "PC" or "LR". Only used for `which_domain=
+                "FD"`. Default is "PC".
+
+        Returns:
+            jax.Array: The response, with shape and domain depending on
+                `which_domain` -- see the delegated method's own docstring.
+
+        Raises:
+            ValueError: If `which_domain`/`which_method` isn't recognized, or a
+                required argument for the selected domain/method is missing, or
+                `which_method="segmented"` is combined with `TDI_order=2.0`.
+        """
+        combination = which_TDI or det.default_combination
+
+        if which_domain == "TD":
+            if times_in_years is None:
+                raise ValueError(
+                    "get_response requires times_in_years for which_domain='TD'."
+                )
+            if which_method == "delay":
+                return self.get_response_delay_td(
+                    det,
+                    times_in_years,
+                    theta,
+                    phi,
+                    waveform_params,
+                    combination=combination,
+                    tdi_order=TDI_order,
+                )
+            if which_method == "segmented":
+                if segment_length is None:
+                    raise ValueError(
+                        "get_response requires segment_length for "
+                        "which_method='segmented'."
+                    )
+                if TDI_order != 1.5:
+                    raise ValueError(
+                        "get_response only supports TDI_order=1.5 for "
+                        "which_method='segmented'."
+                    )
+                return self.get_response_segmented_td(
+                    det,
+                    times_in_years,
+                    theta,
+                    phi,
+                    waveform_params,
+                    segment_length,
+                    combination=combination,
+                )
+            raise ValueError(
+                f"Unknown which_method '{which_method}'; expected 'delay' or "
+                "'segmented'."
+            )
+        if which_domain == "FD":
+            if times_in_years is None or frequency_array is None:
+                raise ValueError(
+                    "get_response requires times_in_years and frequency_array for "
+                    "which_domain='FD'."
+                )
+            return self.get_response_fd(
+                det,
+                times_in_years,
+                theta,
+                phi,
+                waveform_params,
+                frequency_array,
+                combination=combination,
+                polarization=polarization,
+            )
+        raise ValueError(
+            f"Unknown which_domain '{which_domain}'; expected 'TD' or 'FD'."
+        )
+
+    @partial(jax.jit, static_argnums=(0, 1, 6, 7))
+    def get_quadratic_integrand_fd(
+        self,
+        det: "Detector",
+        times_in_years: ArrayLike,
+        theta_array: jax.Array,
+        phi_array: jax.Array,
+        frequency_array: jax.Array,
+        polarization: str = "LR",
+        combination: str | None = None,
+    ) -> dict[str, jax.Array]:
+        """
+        Sky-resolved quadratic response integrand for a GW arriving from (theta_array,
+        phi_array), for each polarization, projected onto a readout combination: builds
+        the linear integrand (see :meth:`get_linear_integrand_fd`), then applies
+        `det.quadratic_response_from_single_link` to it -- the per-sky-pixel analog of
+        Hartwig, Lilley, Muratore & Pieroni (arXiv:2303.15929) eq. 2.29's ``S^UV(f) =
+        Σ C^U_ij C^V*_mn S^η_ij,lm(f)`` CSD, before the ``dΩ_k̂`` sky integral that
+        :meth:`get_quadratic_integrated_fd` performs (see eq. 2.15-2.16).
+
+        Args:
+            det (Detector): The detector (e.g. LISA, LIGO) the response is computed for.
+            times_in_years (ArrayLike): Time(s), in years, at which to evaluate the
+                vertex positions and detector arms.
+            theta_array (jax.Array): Colatitude(s) of the sky position(s), in radians.
+            phi_array (jax.Array): Longitude(s) of the sky position(s), in radians.
+            frequency_array (jax.Array): Frequency values, in Hz, at which to evaluate
+                the response.
+            polarization (str, optional): "LR" or "PC". Default is "LR".
+            combination (str, optional): Name of the readout combination. Defaults to
+                ``det.default_combination``.
+
+        Returns:
+            dict: Maps each doubled polarization letter (e.g. "LL", "RR") to the
+                sky-resolved quadratic response, with shape (configurations, x_vector,
+                channels, channels, pixels).
+        """
+        linear = self.get_linear_integrand_fd(
+            det,
+            times_in_years,
+            theta_array,
+            phi_array,
+            frequency_array,
+            polarization=polarization,
+            combination=combination,
+        )
+        return det.quadratic_response_from_single_link(linear)
+
+    @partial(jax.jit, static_argnums=(0, 1, 6, 7))
+    def get_quadratic_integrated_fd(
+        self,
+        det: "Detector",
+        times_in_years: ArrayLike,
+        theta_array: jax.Array,
+        phi_array: jax.Array,
+        frequency_array: jax.Array,
+        polarization: str = "LR",
+        combination: str | None = None,
+    ) -> dict[str, jax.Array]:
+        """
+        Sky-averaged quadratic response for a GW arriving from (theta_array, phi_array),
+        for each polarization, projected onto a readout combination: builds the
+        quadratic integrand (see :meth:`get_quadratic_integrand_fd`), then applies
+        `det.integrate_quadratic_response` to it -- the sky-averaged response function
+        ``R(f)`` of Hartwig, Lilley, Muratore & Pieroni (arXiv:2303.15929) eq. 2.4-2.5
+        (``S^GW(f) = R(f) P_h(f)``), performing the same ``dΩ_k̂`` integral as eq.
+        2.16's ``Υ^A_ij,mn(f)`` via a pixelized sky average.
+
+        Args:
+            det (Detector): The detector (e.g. LISA, LIGO) the response is computed for.
+            times_in_years (ArrayLike): Time(s), in years, at which to evaluate the
+                vertex positions and detector arms.
+            theta_array (jax.Array): Colatitude(s) of the sky position(s), in radians.
+            phi_array (jax.Array): Longitude(s) of the sky position(s), in radians.
+            frequency_array (jax.Array): Frequency values, in Hz, at which to evaluate
+                the response.
+            polarization (str, optional): "LR" or "PC". Default is "LR".
+            combination (str, optional): Name of the readout combination. Defaults to
+                ``det.default_combination``.
+
+        Returns:
+            dict: Maps each doubled polarization letter (e.g. "LL", "RR") to the
+                sky-averaged quadratic response, with shape (configurations, x_vector,
+                channels, channels).
+        """
+        quadratic = self.get_quadratic_integrand_fd(
+            det,
+            times_in_years,
+            theta_array,
+            phi_array,
+            frequency_array,
+            polarization=polarization,
+            combination=combination,
+        )
+        return det.integrate_quadratic_response(quadratic)
 
     def compute_detector(
         self,
         det: "Detector",
-        times_in_years: ArrayLike,
-        theta_array: ArrayLike,
-        phi_array: ArrayLike,
-        frequency_array: ArrayLike,
+        times_in_years: jax.Array,
+        theta_array: jax.Array,
+        phi_array: jax.Array,
+        frequency_array: jax.Array,
         combination: str | None = None,
         polarization: str = "LR",
     ) -> None:
