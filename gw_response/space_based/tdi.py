@@ -8,6 +8,11 @@ from jax.typing import ArrayLike
 # Local imports
 from gw_response.constants import BasisTransformations, PhysicalConstants
 from gw_response.utils import arm_length_exponential
+from gw_response.space_based.single_link_geometry import (
+    _SINGLE_LINK_ARM_LABELS,
+    single_link_response_delay_td,
+    single_link_response_segmented_td,
+)
 
 if TYPE_CHECKING:
     from gw_response.detector import Detector
@@ -581,11 +586,6 @@ def _tdi_channel_delay_td(
     Returns:
         jax.Array: shape (time,).
     """
-    from gw_response.space_based.single_link_geometry import (
-        _SINGLE_LINK_ARM_LABELS,
-        single_link_response_delay_td,
-    )
-
     channel = jnp.zeros_like(times_in_years)
     for sign, arm_label, delay_labels in terms:
         if delay_labels:
@@ -631,11 +631,6 @@ def _tdi_channel_segmented_td(
     Returns:
         jax.Array: shape (time,).
     """
-    from gw_response.space_based.single_link_geometry import (
-        _SINGLE_LINK_ARM_LABELS,
-        single_link_response_segmented_td,
-    )
-
     channel = jnp.zeros_like(times_in_years)
     for sign, arm_label, delay_labels in terms:
         if delay_labels:
@@ -700,8 +695,6 @@ def tdi_response_segmented_td(
     Raises:
         ValueError: If `combination` isn't one of the supported values.
     """
-    from gw_response.space_based.single_link_geometry import _SINGLE_LINK_ARM_LABELS
-
     times_in_years = jnp.atleast_1d(times_in_years)
     _, ltt, _ = det.detector_arms_retarded(times_in_years, ps)  # (time, arms)
     ltt_by_arm = {label: ltt[:, i] for i, label in enumerate(_SINGLE_LINK_ARM_LABELS)}

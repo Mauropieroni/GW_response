@@ -11,8 +11,8 @@ from jax.typing import ArrayLike
 from gw_response.constants import PhysicalConstants
 from gw_response.detector import Detector
 from gw_response.noise import Noise
-from gw_response.response import Response
-from gw_response.response_utils import (
+from gw_response.response import (
+    Response,
     quadratic_response_integrated,
     quadratic_from_linear,
 )
