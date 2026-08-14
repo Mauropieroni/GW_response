@@ -24,10 +24,10 @@ LIGOARM = 4e3  # LIGO arm length in meters
 # -----------------------------------------------------------------------------
 # -- LIGO Design Sensitivity Curve --------------------------------------------
 # -----------------------------------------------------------------------------
-_path_to_LIGO_design = os.path.join(os.path.dirname(__file__), "noise_data", "LIGO.npz")
-with np.load(_path_to_LIGO_design) as _ligo_design_curves:
-    _ligo_freqs = _ligo_design_curves["Frequency"]
-    _ligo_psd = _ligo_design_curves["Mid high/Late low"]
+_path_to_LIGO_design = os.path.join(os.path.dirname(__file__), "noise_data", "aLIGODesign.txt")
+_ligo_design = np.loadtxt(_path_to_LIGO_design)
+_ligo_freqs = _ligo_design[:, 0]
+_ligo_psd = _ligo_design[:, 1]
 _ligo_interp = interpax.Interpolator1D(
     _ligo_freqs, _ligo_psd, method="linear", extrap=True
 )
