@@ -22,34 +22,29 @@ jax.config.update("jax_enable_x64", True)
 @chex.dataclass
 class Noise(object):
     """
-    Generic per-link/projected noise computation for any Detector (e.g.
-    LISA, LIGO), mirroring the way Response wraps the single-link/combination
-    functions. Detector-specific behavior (what the per-link noise looks
-    like, and how it projects into a readout combination) is delegated to
-    the `det` object passed into each method.
+    Generic per-link/projected noise computation for any Detector (e.g. LISA, LIGO),
+    mirroring the way Response wraps the single-link/combination functions.
+    Detector-specific behavior (per-link noise and how it projects into a readout
+    combination) is delegated to the `det` object passed into each method.
 
-    `Noise` holds no reference to any particular detector -- a detector
-    owns its `Noise` (e.g. `lisa.noise`), not the other way around, so
-    `det` is passed explicitly to every method here instead of being
-    stored on `self`.
+    `Noise` holds no reference to any particular detector -- a detector owns its `Noise`
+    (e.g. `lisa.noise`), not the other way around, so `det` is passed explicitly to
+    every method here instead of being stored on `self`.
 
-    Identity-based `__hash__`/`__eq__` (overriding chex's default
-    field-based ones, which reject `Noise` as unhashable) let `self` be
-    used as a static `jax.jit` argument below -- see `Response` for the
-    full rationale. `compute_detector` stays unjitted since it mutates
-    `self`'s dict attributes.
+    Identity-based `__hash__`/`__eq__` (overriding chex's default field-based ones,
+    which reject `Noise` as unhashable) let `self` be used as a static `jax.jit`
+    argument below -- see `Response` for the full rationale. `compute_detector` stays
+    unjitted since it mutates `self`'s dict attributes.
 
     Attributes:
-        ps (chex.dataclass): Physical constants used in the noise
-            computations.
-        single_link_noise (jax.Array or None): Cache of the most recently
-            computed per-link noise (or already-combined noise, for
-            detectors without a per-link decomposition), as set by
-            :meth:`compute_detector`. Doesn't depend on the readout
-            combination (only its projection does), so unlike
+        ps (chex.dataclass): Physical constants used in the noise computations.
+        single_link_noise (jax.Array or None): Cache of the most recently computed
+            per-link noise (or already-combined noise, for detectors without a per-link
+            decomposition), as set by :meth:`compute_detector`. Doesn't depend on the
+            readout combination (only its projection does), so unlike
             :attr:`noise_matrix` it isn't keyed by one.
-        noise_matrix (dict): Cache of projected noise covariance matrices
-            computed by :meth:`compute_detector`, keyed by combination name.
+        noise_matrix (dict): Cache of projected noise covariance matrices computed by
+            :meth:`compute_detector`, keyed by combination name.
     """
 
     ps: PhysicalConstants = PhysicalConstants()
@@ -68,14 +63,12 @@ class Noise(object):
         self, det: "Detector", times_in_years: ArrayLike
     ) -> jax.Array:
         """
-        Computes the detector's arm matrix, rescaled by the arm length, at
-        the given time(s).
+        Computes the (rescaled) detector's arm matrix at the given time(s).
 
         Args:
-            det (Detector): The detector (e.g. LISA, LIGO) the noise is
-                computed for.
-            times_in_years (ArrayLike): Time(s), in years, at which to
-                evaluate the detector arms.
+            det (Detector): The detector (e.g. LISA, LIGO) the noise is computed for.
+            times_in_years (ArrayLike): Time(s), in years, at which to evaluate the
+                detector arms.
 
         Returns:
             jax.Array: The rescaled arm matrix.
@@ -91,20 +84,18 @@ class Noise(object):
         **noise_parameters,
     ) -> jax.Array:
         """
-        Computes the per-link noise covariance (or, for detectors with no
-        per-link decomposition, the already-combined noise) at the given
-        time(s) and frequencies. See :meth:`Detector.single_link_noise`.
+        Computes the per-link noise covariance (or, for detectors with no per-link
+        decomposition, the already-combined noise) at the given time(s) and frequencies.
+        See :meth:`Detector.single_link_noise`.
 
         Args:
-            det (Detector): The detector (e.g. LISA, LIGO) the noise is
-                computed for.
-            times_in_years (ArrayLike): Time(s), in years, at which to
-                evaluate the detector arms.
-            frequency_array (jax.Array): Frequency values, in Hz, at which
-                to evaluate the noise.
-            **noise_parameters: Detector-specific noise parameters (e.g.
-                LISA's ``TM_acceleration_parameters``/``OMS_parameters``);
-                LIGO takes none.
+            det (Detector): The detector (e.g. LISA, LIGO) the noise is computed for.
+            times_in_years (ArrayLike): Time(s), in years, at which to evaluate the
+                detector arms.
+            frequency_array (jax.Array): Frequency values, in Hz, at which to evaluate
+                the noise.
+            **noise_parameters: Detector-specific noise parameters (e.g. LISA's
+                ``TM_acceleration_parameters``/``OMS_parameters``); LIGO takes none.
 
         Returns:
             jax.Array: The per-link (or already-combined) noise covariance.
@@ -126,28 +117,25 @@ class Noise(object):
         **noise_parameters,
     ) -> jax.Array:
         """
-        Computes the noise covariance matrix projected into a readout
-        combination, at the given time(s) and frequencies -- for LISA, Hartwig,
-        Lilley, Muratore & Pieroni (arXiv:2303.15929) eq. 2.29b/2.30's ``S^UV,N
-        = C^UV S^η,N`` (see :meth:`gw_response.detector.Detector.project_noise`).
+        Computes the noise covariance matrix projected into a readout combination, at
+        the given time(s) and frequencies -- for LISA, Hartwig, Lilley, Muratore &
+        Pieroni (arXiv:2303.15929) eq. 2.29b/2.30's ``S^UV,N = C^UV S^η,N``
+        (see :meth:`gw_response.detector.Detector.project_noise`).
 
         Args:
-            det (Detector): The detector (e.g. LISA, LIGO) the noise is
-                computed for.
-            times_in_years (ArrayLike): Time(s), in years, at which to
-                evaluate the detector arms.
-            frequency_array (jax.Array): Frequency values, in Hz, at which
-                to evaluate the noise.
-            combination (str, optional): Name of the readout combination
-                (e.g. a TDI variable for LISA). Defaults to
-                ``det.default_combination``.
-            **noise_parameters: Detector-specific noise parameters (e.g.
-                LISA's ``TM_acceleration_parameters``/``OMS_parameters``);
-                LIGO takes none.
+            det (Detector): The detector (e.g. LISA, LIGO) the noise is computed for.
+            times_in_years (ArrayLike): Time(s), in years, at which to evaluate the
+                detector arms.
+            frequency_array (jax.Array): Frequency values, in Hz, at which to evaluate
+                the noise.
+            combination (str, optional): Name of the readout combination (e.g. a TDI
+                variable for LISA). Defaults to ``det.default_combination``.
+            **noise_parameters: Detector-specific noise parameters (e.g. LISA's
+                ``TM_acceleration_parameters``/``OMS_parameters``); LIGO takes none.
 
         Returns:
-            jax.Array: The noise covariance matrix, projected into the
-                requested combination.
+            jax.Array: The noise covariance matrix, projected into therequested
+                combination.
         """
         combination = combination or det.default_combination
         arms_matrix_rescaled = self.get_arms_matrix_rescaled(det, times_in_years)
@@ -169,25 +157,22 @@ class Noise(object):
         **noise_parameters,
     ) -> None:
         """
-        Computes and caches the per-link and projected noise covariance
-        matrices for a readout combination.
+        Computes and caches the per-link and projected noise covariance matrices for a
+        readout combination.
 
-        Results are stored in :attr:`single_link_noise` and
-        :attr:`noise_matrix`, the latter keyed by ``combination``.
+        Results are stored in :attr:`single_link_noise` and :attr:`noise_matrix`, the
+        latter keyed by ``combination``.
 
         Args:
-            det (Detector): The detector (e.g. LISA, LIGO) the noise is
-                computed for.
-            times_in_years (ArrayLike): Time(s), in years, at which to
-                evaluate the detector arms.
-            frequency_array (jax.Array): Frequency values, in Hz, at which
-                to evaluate the noise.
-            combination (str, optional): Name of the readout combination
-                (e.g. a TDI variable for LISA). Defaults to
-                ``det.default_combination``.
-            **noise_parameters: Detector-specific noise parameters (e.g.
-                LISA's ``TM_acceleration_parameters``/``OMS_parameters``);
-                LIGO takes none.
+            det (Detector): The detector (e.g. LISA, LIGO) the noise is computed for.
+            times_in_years (ArrayLike): Time(s), in years, at which to evaluate the
+                detector arms.
+            frequency_array (jax.Array): Frequency values, in Hz, at which to evaluate
+                the noise.
+            combination (str, optional): Name of the readout combination (e.g. a TDI
+                variable for LISA). Defaults to ``det.default_combination``.
+            **noise_parameters: Detector-specific noise parameters (e.g. LISA's
+                ``TM_acceleration_parameters``/``OMS_parameters``); LIGO takes none.
         """
         combination = combination or det.default_combination
 

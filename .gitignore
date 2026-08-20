@@ -162,6 +162,10 @@ cython_debug/
 *.DS_Store
 *.vscode
 
-# Plots 
+# Plots
 *.png
 *.gif
+
+# LDC data releases (large, not ours to redistribute -- download manually,
+# see examples/LDC_MBHB.ipynb)
+examples/LDC_data/

@@ -464,7 +464,9 @@ class Response(object):
         :meth:`get_single_link_response_delay_td`.
 
         Left unjitted so that reassigning :attr:`waveform` between calls is always
-        picked up -- see the class docstring.
+        picked up -- see the class docstring. The actual numerical work
+        (`tdi_response_delay_td`) is jitted separately, as one fused program, same
+        pattern as `get_single_link_response_delay_td`.
 
         Args: see `tdi_response_delay_td` (`strain_td` excepted -- taken from
         :attr:`waveform` instead).
@@ -562,7 +564,9 @@ class Response(object):
         here -- use :meth:`get_response_delay_td` for that.
 
         Left unjitted so that reassigning :attr:`waveform` between calls is always
-        picked up -- see the class docstring.
+        picked up -- see the class docstring. The actual numerical work
+        (`tdi_response_segmented_td`) is jitted separately, as one fused program, same
+        pattern (and same reasoning) as `get_response_delay_td`.
 
         Args: see `tdi_response_segmented_td` (`strain_td` excepted -- taken from
         :attr:`waveform` instead).

@@ -105,63 +105,48 @@ def single_link_TM_acceleration_noise_variance(
             shape (configurations, frequency, arms (6), arms (6)).
     """
 
-    # the shape of t_retarded_factor is configurations, x_vector, arms
     t_retarded_factor = arm_length_exponential(arms_matrix_rescaled, x_vector)
-
-    # This would be a diag matrix on the last 2 indexes,
-    # the shape is configurations, x_vector, arms, arms
+    # Diagonal in the arm indices (the delay factor only ever couples an arm to
+    # itself/its own reverse direction, never to a third one).
     t_retarded_coeffs = jnp.einsum(
         "ij,...kj->...kij", jnp.identity(6), t_retarded_factor
     )
-
-    # This would be a diag matrix on the last 2 indexes,
-    # the shape is configurations, x_vector, arms, arms
+    # Same, for the reverse-direction arms.
     flipped_t_retarded_coeffs = jnp.einsum(
         "ij,...kj->...kij",
         jnp.identity(6),
         jnp.roll(t_retarded_factor, 3, axis=-1),
     )
 
-    # The shape will be configurations, arms, arms
     parameters_matrix = jnp.einsum(
         "ij,...j->...ij", jnp.identity(6), TM_acceleration_parameters**2
     )
-
-    # The shape will be configurations, arms, arms
     flipped_parameters_matrix = jnp.einsum(
         "ij,...j->...ij",
         jnp.identity(6),
         jnp.roll(TM_acceleration_parameters**2, 3),
     )
-
-    # The shape will be frequency
     N_acc = LISA_acceleration_noise(frequency, acc_param=1.0)
 
-    # The shape will be configurations, frequency, arms, arms
+    # eq. 2.21a's diagonal: S^TM_ij + S^TM_ji.
     noise_matrix = jnp.einsum(
         "...ij,k->...kij", parameters_matrix + flipped_parameters_matrix, N_acc
     )
 
-    # t_retarded_coeffs is configurations, x_vector, arms, arms
-    # flipped_parameters_matrix is configurations, arms, arms
-    # The shape will be configurations, frequency, arms, arms
+    # eq. 2.21b's off-diagonal: the D_ij n_ji^TM cross term, both delay directions.
     delayed_1 = jnp.einsum(
         "...kij,...ij->...kij", t_retarded_coeffs, flipped_parameters_matrix
     )
-
     delayed_2 = jnp.einsum(
         "...kij,...ij->...kij",
         jnp.conjugate(flipped_t_retarded_coeffs),
         parameters_matrix,
     )
-
     cross_matrix = jnp.einsum(
         "...kij,k->...kij",
         (delayed_1 + delayed_2),
         N_acc,
     )
-
-    # The shape will be configurations, frequency, arms, arms
     return noise_matrix + jnp.roll(cross_matrix, 3, axis=-1)
 
 
@@ -196,13 +181,8 @@ def single_link_OMS_noise_variance(
             (configurations, frequency, arms (6), arms (6)).
     """
 
-    # The shape will be configurations, arms, arms
     parameters_matrix = jnp.einsum("ij,...j->...ij", jnp.identity(6), OMS_parameters**2)
-
-    # The shape will be frequency
     N_int = LISA_interferometric_noise(frequency, inter_param=1.0)
-
-    # The shape will be configurations, frequency, arms, arms
     return jnp.einsum("...ij,k->...kij", parameters_matrix, N_int)
 
 
@@ -235,10 +215,7 @@ def tdi_projection(
         jax.Array: The TDI noise covariance matrix, with shape
             (configurations, frequency, TDI, TDI).
     """
-    # tdi_mat has shape configuration, x_vector, TDI, arms
     tdi_mat = tdi_matrix(TDI_idx, arms_matrix_rescaled, x_vector)
-
-    # The shape will be configurations, frequency, tdi, tdi
     return project_noise_matrix(tdi_mat, single_link_mat)
 
 

@@ -245,29 +245,24 @@ def single_link_response_static(
         jax.Array: The single-link strain response, with shape (configurations,
             x_vector, arms, pixels).
     """
-    # positions_rescaled is configuration, vector, masses (masses are 1,2,3)
+    # Pairs each arm's receiver position with its emitter's (satellite i, then i+1
+    # cyclically), doubling the trailing axis from 3 satellites to 6 arms.
     all_positions_rescaled = jnp.concatenate(
         (positions_rescaled, jnp.roll(positions_rescaled, -1, axis=-1)), axis=-1
     )
-
-    # exp has shape configurations, x_vector, arms, pixels
     position_exp_factor = position_exponential(
         all_positions_rescaled, wavevector, x_vector
     )
-
-    # this guy will be configurations, x_vector, arms
     t_retarded_factor = arm_length_exponential(arms_matrix_rescaled, x_vector)
-
-    # this guy will be configurations, arms
     arm_lengths = arm_lengths_from_matrix(arms_matrix_rescaled)
-
-    # This will be configurations, x_vector, arms
     prefactor = jnp.einsum("...j,...ij->...ij", arm_lengths, t_retarded_factor)
-    # Need to pre-multiply by x to convert to fractional frequency in single
-    # link response
-    prefactor = jnp.einsum("i,...ij->...ij", x_vector, prefactor)
+    # Need to pre-multiply by -i*x to convert to fractional frequency in single
+    # link response -- see the matching comment in single_link_retarded.py's
+    # single_link_response_retarded (this static pipeline's own counterpart)
+    # for the derivation/cross-check; kept consistent with it here so the two
+    # pipelines agree in the frozen-geometry limit they're meant to share.
+    prefactor = jnp.einsum("i,...ij->...ij", -1j * x_vector, prefactor)
 
-    # This will be configurations, x_vector, arms, pixels
     return jnp.einsum(
         "...ij,...ijk->...ijk", prefactor, position_exp_factor * xi_k_A_static
     )
@@ -378,13 +373,8 @@ def get_single_link_response_static(
         jax.Array: The single-link strain response, with shape (configurations,
             x_vector, arms, pixels).
     """
-    # This computes the geometrical factor
     geometrical = geometrical_factor(arms_matrix_rescaled, polarization_tensor)
-
-    # This computes the xi vectors
     xi_k_vec = xi_k_A_static(arms_matrix_rescaled, wavevector, x_vector, geometrical)
-
-    # This will be configurations, x_vector, arms, pixels
     return single_link_response_static(
         positions_rescaled, arms_matrix_rescaled, wavevector, x_vector, xi_k_vec
     )

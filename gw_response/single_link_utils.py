@@ -62,14 +62,9 @@ def geometrical_factor(
     Returns:
         jax.Array: The geometrical factor, with shape (configurations, arms, pixels).
     """
-    # arms_matrix_rescaled is configurations, vectorial_index, arms
-    # polarization_tensor is pixels, vectorial_index, vectorial_index
-
     arms_tensor = jnp.einsum(
         "...ik,...jk->...ijk", arms_matrix_rescaled, arms_matrix_rescaled / 2
     )
-
-    # the output is configurations, arms, pixels
     return jnp.einsum("...ijk,...ijl->...kl", arms_tensor, polarization_tensor.T)
 
 
@@ -138,11 +133,8 @@ def position_exponential(
             satellite, pixels).
     """
 
-    # This is configurations, satellite, pixels
     scalar = jnp.einsum(
         "...ij,ik->...jk", positions_detector_frame_rescaled, unit_wavevector
     )
     exponent = jnp.einsum("i,...jk->...ijk", -1j * x_vector, scalar)
-
-    # Output is configurations, x_vector, satellite, pixels
     return jnp.exp(exponent)

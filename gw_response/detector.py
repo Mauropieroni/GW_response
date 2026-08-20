@@ -145,6 +145,7 @@ class Detector(ABC):
         time_in_years: ArrayLike,
         ps: PhysicalConstants,
         freeze_geometry: bool = False,
+        arm_indices: tuple[int, ...] | None = None,
     ) -> tuple[jax.Array, jax.Array, jax.Array]:
         """
         Retarded counterpart of :meth:`detector_arms`: for each arm (per
@@ -164,18 +165,34 @@ class Detector(ABC):
             ps (PhysicalConstants): Physical constants (`light_speed`, `yr`).
             freeze_geometry (bool): If True, evaluate the emitter at the same time as
                 the receiver instead of backdating it.
+            arm_indices (tuple[int, ...], optional): If given, only these indices into
+                `arm_vertex_pairs` are computed (in the given order), instead of all of
+                them -- lets callers that only need a handful of arms (e.g. one TDI
+                delay-operator term, which only ever touches one) skip the other arms'
+                `vertex_positions` lookups entirely, rather than computing all of them
+                and discarding most. Must be static under `jax.jit` (it changes how
+                many `vertex_positions` calls get traced). Default None computes every
+                arm, unchanged from before this parameter existed.
 
         Returns:
             tuple[jax.Array, jax.Array, jax.Array]: `(arm_vector, light_travel_time,
                 receiver_position)`, each with shape (configurations, vectorial_index
                 (3), arms) -- except `light_travel_time`, shape (configurations, arms)
-                -- stacked over the arms in `arm_vertex_pairs` order.
+                -- stacked over the arms in `arm_vertex_pairs` order (or `arm_indices`'s
+                own order, if given).
         """
         time_in_years = as_time_array(time_in_years)
         positions_rec = self.vertex_positions(time_in_years)
 
+        arm_vertex_pairs = self.arm_vertex_pairs
+        pairs = (
+            arm_vertex_pairs
+            if arm_indices is None
+            else tuple(arm_vertex_pairs[i] for i in arm_indices)
+        )
+
         arm_vectors, ltts, receivers = [], [], []
-        for receiver_idx, emitter_idx in self.arm_vertex_pairs:
+        for receiver_idx, emitter_idx in pairs:
             x_rec = positions_rec[:, :, receiver_idx]
             x_emi_simul = positions_rec[:, :, emitter_idx]
             ltt_approx = (
@@ -239,7 +256,7 @@ class Detector(ABC):
             jax.Array: An array representing the x-parameter, calculated as 2π times the
                 kl-vector for the given frequency vector.
         """
-        return 2 * jnp.pi * self.klvector(frequency_vec)
+        return 2.0 * jnp.pi * self.klvector(frequency_vec)
 
     @abstractmethod
     def combination_matrix(

@@ -88,7 +88,7 @@ def spectral_derivative(x_time: jax.Array, dt: ArrayLike) -> jax.Array:
         jax.Array: The derivative, with shape (..., time).
     """
     n = x_time.shape[-1]
-    omega = 2 * jnp.pi * jnp.fft.fftfreq(n, d=dt)
+    omega = 2.0 * jnp.pi * jnp.fft.fftfreq(n, d=dt)
     return jnp.fft.ifft(1j * omega * jnp.fft.fft(x_time, axis=-1), axis=-1)
 
 
@@ -109,7 +109,7 @@ def instantaneous_frequency(h_time: jax.Array, dt: ArrayLike) -> jax.Array:
         jax.Array: The instantaneous frequency, in Hz, with shape (time,).
     """
     h_of_f = fft_positive_time_and_freqs(h_time)
-    return jnp.imag(spectral_derivative(h_of_f, dt) / h_of_f) / (2 * jnp.pi)
+    return jnp.imag(spectral_derivative(h_of_f, dt) / h_of_f) / (2.0 * jnp.pi)
 
 
 def instantaneous_phase_and_frequency(
@@ -130,4 +130,4 @@ def instantaneous_phase_and_frequency(
             `t_seconds`.
     """
     phase_value, phase_dot = jax.jvp(phase, (t_seconds,), (1.0,))
-    return phase_value, phase_dot / (2 * jnp.pi)
+    return phase_value, phase_dot / (2.0 * jnp.pi)

@@ -162,7 +162,21 @@ def single_link_response_retarded(
 
     t_retarded_factor = delay_factor(ltt_rescaled, x_vector)
     prefactor = jnp.einsum("...j,...ij->...ij", ltt_rescaled, t_retarded_factor)
-    prefactor = jnp.einsum("i,...ij->...ij", x_vector, prefactor)
+    # -1j: converts the phase-domain kernel to the fractional-frequency (Doppler)
+    # convention this package uses throughout -- a genuine time derivative
+    # (d/dt -> -i*2*pi*f in this module's e^{+i*2*pi*f*t} convention, matching
+    # h_from_amplitudes_phase's own h_plus=amplitude*exp(i*phase)), not just a
+    # real amplitude rescaling. Confirmed against the independently-implemented,
+    # externally-validated (examples/compare_with_lisagwresponse.ipynb,
+    # examples/compare_with_pytdi.ipynb) time-domain delay path
+    # (single_link_response_delay_td), which already has this derivative built
+    # in implicitly via its own emission/reception differencing -- this
+    # frequency-domain path was missing it. Invisible in any power/quadratic
+    # quantity (noise curves, stochastic-background response), since a global
+    # unit-modulus phase factor cancels in |R|^2 -- only matters for genuinely
+    # phase-coherent, single-source work (examples/LDC_MBHB.ipynb), which is
+    # how this was found.
+    prefactor = jnp.einsum("i,...ij->...ij", -1j * x_vector, prefactor)
 
     return jnp.einsum(
         "...ij,...ijk->...ijk", prefactor, position_exp_factor * xi_k_A_retarded_value

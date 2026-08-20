@@ -39,22 +39,14 @@ def uv_analytical(theta: ArrayLike, phi: ArrayLike) -> tuple[jax.Array, jax.Arra
     Computes the two unit vectors spanning the plane transverse to the propagation
     direction, for each requested sky position.
 
-    These vectors (u, v) form, together with the wavevector from :func:`unit_vec`, a
-    right-handed orthonormal triad (``u x v = unit_vec(theta, phi)``) used to build the
-    gravitational wave polarization basis -- matching the LDC Manual's (LISA-LCST-SGS-
-    MAN-001) Sec. 6.1.2 convention that its own ``(u, v, k)`` be a direct triad, once
-    its ``k = -unit_vec(theta, phi)`` antiparallel convention (reproducible by
-    evaluating this whole package at the antipodal sky position ``(pi - theta, phi +
-    pi)`` instead, rather than any parameter here) is accounted for: flipping the sign
-    of one wavevector (k -> -k) requires flipping exactly one of its two transverse
-    partners to keep the triad's handedness consistent, which is why only `dk_dphi`
-    (not `dk_dtheta`) carries a relative sign here. Equivalently (verified numerically,
-    not just by matching variable names), this is the same right-handed construction as
-    Hartwig, Lilley, Muratore & Pieroni (arXiv:2303.15929) eq. 2.9's ``û(k̂) = (k̂ x
-    ê_z)/|k̂ x ê_z|``, ``v̂(k̂) = k̂ x û``: their ``(û, v̂)`` relate to this function's
-    ``(dk_dtheta, dk_dphi)`` as ``dk_dtheta = v̂`` and ``dk_dphi = -û`` (a swap, with
-    `dk_dphi` carrying an extra sign) -- not a literal name-for-name match, but the same
-    right-handed triad construction relative to ``k̂``.
+    These vectors, together with the wavevector from :func:unit_vec, form a right-handed
+    orthonormal triad, ``u x v = unit_vec(theta, phi)`` to construct the GW polarization
+    basis. Matches the LISA LDC Manual (LISA-LCST-SGS-MAN-001) Sec 6.1.2 antiparallel
+    convention ``(u, v, k)`` with ``k = -unit_vec(theta, phi)``; also evaluating at the
+    antipodal sky position ``(pi - theta, phi + pi)`` reproduces the LDC convention.
+    This is also equivalent to the right-handed construction of Hartwig et al.
+    (arXiv:2303.15929, Eq. 2.9), ``û = (k̂ x ê_z)/|k̂ x ê_z|`` and ``v̂ = k̂ x û``:
+    here ``dk_dtheta = v̂`` and ``dk_dphi = -û``.
 
     Args:
         theta (float or ArrayLike): Colatitude(s) of the sky position(s), in radians.
@@ -87,10 +79,8 @@ def polarization_vectors(u: jax.Array, v: jax.Array) -> tuple[jax.Array, jax.Arr
     unit vectors.
 
     Args:
-        u (jax.Array): First transverse unit vector, shape (pixels, vectorial_index
-            (3)).
-        v (jax.Array): Second transverse unit vector, shape (pixels, vectorial_index
-            (3)).
+        u (jax.Array): First vector, shape (pixels, vectorial_index (3)).
+        v (jax.Array): Second vector, shape (pixels, vectorial_index (3)).
 
     Returns:
         tuple: A tuple of two complex jax.Array, each with shape (pixels,
@@ -130,10 +120,8 @@ def polarization_tensors_PC(u: jax.Array, v: jax.Array) -> tuple[jax.Array, jax.
     difference.
 
     Args:
-        u (jax.Array): First transverse unit vector, shape (pixels, vectorial_index
-            (3)).
-        v (jax.Array): Second transverse unit vector, shape (pixels, vectorial_index
-            (3)).
+        u (jax.Array): First vector, shape (pixels, vectorial_index (3)).
+        v (jax.Array): Second vector, shape (pixels, vectorial_index (3)).
 
     Returns:
         tuple: A tuple ``(e_plus, e_cross)`` of jax.Array, each with shape (pixels,
@@ -179,10 +167,8 @@ def polarization_tensors_LR(u: jax.Array, v: jax.Array) -> tuple[jax.Array, jax.
     sqrt(2)`` vectors, which would reintroduce an extra factor of 1/2.
 
     Args:
-        u (jax.Array): First transverse unit vector, shape (pixels, vectorial_index
-            (3)).
-        v (jax.Array): Second transverse unit vector, shape (pixels, vectorial_index
-            (3)).
+        u (jax.Array): First vector, shape (pixels, vectorial_index (3)).
+        v (jax.Array): Second vector, shape (pixels, vectorial_index (3)).
 
     Returns:
         tuple: A tuple ``(e_L, e_R)`` of complex jax.Array, each with shape (pixels,

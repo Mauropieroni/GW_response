@@ -70,21 +70,14 @@ class TestRotatePolarizationsByPsi(unittest.TestCase):
         )
 
     def test_from_source_frame_matches_from_amplitude_phase_at_psi_zero(self):
-        def amplitude_plus(t, waveform_params):
-            return jnp.asarray(1e-21)
-
-        def amplitude_cross(t, waveform_params):
-            return jnp.asarray(0.5e-21)
+        def amplitudes(t, waveform_params):
+            return jnp.asarray(1e-21), jnp.asarray(0.5e-21)
 
         def phase(t, waveform_params):
             return 2 * jnp.pi * 1e-2 * t
 
-        waveform_rotated = gwr.Waveform.from_source_frame(
-            amplitude_plus, amplitude_cross, phase, psi=0.0
-        )
-        waveform_plain = gwr.Waveform.from_amplitude_phase(
-            amplitude_plus, amplitude_cross, phase
-        )
+        waveform_rotated = gwr.Waveform.from_source_frame(amplitudes, phase, psi=0.0)
+        waveform_plain = gwr.Waveform.from_amplitude_phase(amplitudes, phase)
         assert waveform_rotated.strain_td is not None
         assert waveform_plain.strain_td is not None
 
@@ -100,22 +93,15 @@ class TestRotatePolarizationsByPsi(unittest.TestCase):
         )
 
     def test_from_source_frame_matches_manual_rotation_at_nonzero_psi(self):
-        def amplitude_plus(t, waveform_params):
-            return jnp.asarray(1e-21)
-
-        def amplitude_cross(t, waveform_params):
-            return jnp.asarray(0.5e-21)
+        def amplitudes(t, waveform_params):
+            return jnp.asarray(1e-21), jnp.asarray(0.5e-21)
 
         def phase(t, waveform_params):
             return 2 * jnp.pi * 1e-2 * t
 
         psi = 0.6
-        waveform_rotated = gwr.Waveform.from_source_frame(
-            amplitude_plus, amplitude_cross, phase, psi=psi
-        )
-        waveform_plain = gwr.Waveform.from_amplitude_phase(
-            amplitude_plus, amplitude_cross, phase
-        )
+        waveform_rotated = gwr.Waveform.from_source_frame(amplitudes, phase, psi=psi)
+        waveform_plain = gwr.Waveform.from_amplitude_phase(amplitudes, phase)
         assert waveform_rotated.strain_td is not None
         assert waveform_plain.strain_td is not None
 
@@ -177,18 +163,13 @@ class TestSingleLinkDelayRetardedSegmentedTD(unittest.TestCase):
 
         times = jnp.linspace(0.0, 0.01, 50)
 
-        def amplitude_plus(t, waveform_params):
-            return jnp.asarray(1e-21)
-
-        def amplitude_cross(t, waveform_params):
-            return jnp.asarray(0.5e-21)
+        def amplitudes(t, waveform_params):
+            return jnp.asarray(1e-21), jnp.asarray(0.5e-21)
 
         def phase(t, waveform_params):
             return 2 * jnp.pi * 1e-2 * t
 
-        response.waveform = gwr.Waveform.from_amplitude_phase(
-            amplitude_plus, amplitude_cross, phase
-        )
+        response.waveform = gwr.Waveform.from_amplitude_phase(amplitudes, phase)
 
         d_t = response.get_single_link_response_delay_td(lisa, times, theta, phi, None)
         self.assertEqual(d_t.shape, (50, 6))
@@ -214,13 +195,17 @@ class TestSingleLinkDelayRetardedSegmentedTD(unittest.TestCase):
 
         times = jnp.linspace(0.0, 0.01, 50)
         waveform_a = gwr.Waveform.from_amplitude_phase(
-            amplitude_plus=lambda t, waveform_params: jnp.asarray(1e-21),
-            amplitude_cross=lambda t, waveform_params: jnp.asarray(0.5e-21),
+            amplitudes=lambda t, waveform_params: (
+                jnp.asarray(1e-21),
+                jnp.asarray(0.5e-21),
+            ),
             phase=lambda t, waveform_params: jnp.asarray(2 * jnp.pi * 1e-2 * t),
         )
         waveform_b = gwr.Waveform.from_amplitude_phase(
-            amplitude_plus=lambda t, waveform_params: jnp.asarray(3e-21),
-            amplitude_cross=lambda t, waveform_params: jnp.asarray(2e-21),
+            amplitudes=lambda t, waveform_params: (
+                jnp.asarray(3e-21),
+                jnp.asarray(2e-21),
+            ),
             phase=lambda t, waveform_params: jnp.asarray(2 * jnp.pi * 3e-2 * t + 0.7),
         )
 
@@ -272,18 +257,13 @@ class TestSingleLinkDelayRetardedSegmentedTD(unittest.TestCase):
 
         times = jnp.linspace(0.0, 0.01, 50)
 
-        def amplitude_plus(t, waveform_params):
-            return jnp.asarray(1e-21)
-
-        def amplitude_cross(t, waveform_params):
-            return jnp.asarray(0.5e-21)
+        def amplitudes(t, waveform_params):
+            return jnp.asarray(1e-21), jnp.asarray(0.5e-21)
 
         def phase(t, waveform_params):
             return 2 * jnp.pi * 1e-2 * t
 
-        response.waveform = gwr.Waveform.from_amplitude_phase(
-            amplitude_plus, amplitude_cross, phase
-        )
+        response.waveform = gwr.Waveform.from_amplitude_phase(amplitudes, phase)
 
         d_t = response.get_single_link_response_segmented_td(
             lisa,
@@ -326,18 +306,13 @@ class TestTDIResponseDelayTD(unittest.TestCase):
         assert pixel.theta_pixel is not None and pixel.phi_pixel is not None
         theta, phi = pixel.theta_pixel[:1], pixel.phi_pixel[:1]
 
-        def amplitude_plus(t, waveform_params):
-            return jnp.asarray(1e-21)
-
-        def amplitude_cross(t, waveform_params):
-            return jnp.asarray(0.5e-21)
+        def amplitudes(t, waveform_params):
+            return jnp.asarray(1e-21), jnp.asarray(0.5e-21)
 
         def phase(t, waveform_params):
             return 2 * jnp.pi * 3e-3 * t
 
-        response.waveform = gwr.Waveform.from_amplitude_phase(
-            amplitude_plus, amplitude_cross, phase
-        )
+        response.waveform = gwr.Waveform.from_amplitude_phase(amplitudes, phase)
         return lisa, response, theta, phi
 
     def test_zeta_matches_independent_manual_construction(self):
@@ -499,18 +474,13 @@ class TestTDIResponseSegmentedTD(unittest.TestCase):
         assert pixel.theta_pixel is not None and pixel.phi_pixel is not None
         theta, phi = pixel.theta_pixel[:1], pixel.phi_pixel[:1]
 
-        def amplitude_plus(t, waveform_params):
-            return jnp.asarray(1e-21)
-
-        def amplitude_cross(t, waveform_params):
-            return jnp.asarray(0.5e-21)
+        def amplitudes(t, waveform_params):
+            return jnp.asarray(1e-21), jnp.asarray(0.5e-21)
 
         def phase(t, waveform_params):
             return 2 * jnp.pi * 3e-3 * t
 
-        response.waveform = gwr.Waveform.from_amplitude_phase(
-            amplitude_plus, amplitude_cross, phase
-        )
+        response.waveform = gwr.Waveform.from_amplitude_phase(amplitudes, phase)
         return lisa, response, theta, phi
 
     def test_zeta_matches_independent_manual_construction(self):
@@ -622,18 +592,13 @@ class TestGetResponseDispatcher(unittest.TestCase):
         assert pixel.theta_pixel is not None and pixel.phi_pixel is not None
         theta, phi = pixel.theta_pixel[:1], pixel.phi_pixel[:1]
 
-        def amplitude_plus(t, waveform_params):
-            return jnp.asarray(1e-21)
-
-        def amplitude_cross(t, waveform_params):
-            return jnp.asarray(0.5e-21)
+        def amplitudes(t, waveform_params):
+            return jnp.asarray(1e-21), jnp.asarray(0.5e-21)
 
         def phase(t, waveform_params):
             return 2 * jnp.pi * 3e-3 * t
 
-        response.waveform = gwr.Waveform.from_amplitude_phase(
-            amplitude_plus, amplitude_cross, phase
-        )
+        response.waveform = gwr.Waveform.from_amplitude_phase(amplitudes, phase)
         return lisa, response, theta, phi
 
     def test_td_delay_matches_direct_call(self):

@@ -7,12 +7,63 @@ import jax.numpy as jnp
 import jax_healpy as hp
 import numpy as np
 from jax.typing import ArrayLike
+from scipy.interpolate import make_interp_spline
 
 # Local imports
 from gw_response.constants import PhysicalConstants
 
 # Update jax configuration to enable 64-bit precision for numerical computations
 jax.config.update("jax_enable_x64", True)
+
+
+def bspline_interp_jax(t, data, k=5):
+    """JAX-native quintic B-spline interpolant through (t, data) -- matches
+    lisagwresponse's own strain interpolant (`make_interp_spline(k=5)`)
+    exactly. Fitting the spline coefficients is still done once with SciPy
+    up front (a fixed linear solve, not something that needs to run inside
+    jit/vmap); only *evaluation* at new query points is JAX-native (De
+    Boor's algorithm via jnp ops), since that's what gets called repeatedly
+    under jit/vmap inside `strain_td`. Out-of-range queries return 0
+    (matches lisagwresponse's `ext='zeros'` default for strain).
+    """
+    if np.size(t) != np.size(data):
+        raise ValueError("time and data sizes must be the same")
+
+    scipy_spline = make_interp_spline(t, data, k=k)
+    knots = jnp.asarray(scipy_spline.t)
+    coeffs = jnp.asarray(scipy_spline.c)
+    n_coeffs = coeffs.shape[0]
+    # `make_interp_spline` clamps the knot vector with multiplicity k + 1 at
+    # each end, so the valid (in-range) domain is exactly [knots[k],
+    # knots[-k - 1]]; reading it off `knots` keeps everything JAX-native
+    # instead of round-tripping through the original `t` array.
+    t0, t1 = knots[k], knots[-k - 1]
+
+    def _deboor_scalar(x):
+        # Knot-span index i such that knots[i] <= x < knots[i+1], clamped to
+        # the valid interior range (matches SciPy's own boundary handling).
+        i = jnp.clip(jnp.searchsorted(knots, x, side="right") - 1, k, n_coeffs - 1)
+
+        d = [coeffs[i - k + j] for j in range(k + 1)]
+        for r in range(1, k + 1):
+            for j in range(k, r - 1, -1):
+                left = knots[j + i - k]
+                right = knots[j + 1 + i - r]
+                alpha = (x - left) / (right - left)
+                d[j] = (1.0 - alpha) * d[j - 1] + alpha * d[j]
+        return d[k]
+
+    _deboor = jax.vmap(_deboor_scalar)
+
+    def interp(x):
+        x = jnp.asarray(x)
+        shape = x.shape
+        x_flat = x.reshape(-1)
+        y_flat = _deboor(x_flat)
+        y_flat = jnp.where((x_flat >= t0) & (x_flat <= t1), y_flat, 0.0)
+        return y_flat.reshape(shape)
+
+    return interp
 
 
 def as_time_array(time_in_years: ArrayLike) -> jax.Array:
