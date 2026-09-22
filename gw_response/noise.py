@@ -7,8 +7,6 @@ import jax
 from dataclasses import field
 from typing import TYPE_CHECKING
 
-from jax.typing import ArrayLike
-
 # Local imports
 from gw_response.constants import PhysicalConstants
 
@@ -52,14 +50,14 @@ class Noise(object):
         return self is other
 
     def get_arms_matrix_rescaled(
-        self, det: "Detector", times_in_years: ArrayLike
+        self, det: "Detector", times_in_years: jax.Array
     ) -> jax.Array:
         """
         Computes the (rescaled) detector's arm matrix at the given time(s).
 
         Args:
             det (Detector): The detector (e.g. LISA, LIGO) the noise is computed for.
-            times_in_years (ArrayLike): Time(s), in years, at which to evaluate the
+            times_in_years (jax.Array): Time(s), in years, at which to evaluate the
                 detector arms.
 
         Returns:
@@ -71,7 +69,7 @@ class Noise(object):
     def get_single_link_noise(
         self,
         det: "Detector",
-        times_in_years: ArrayLike,
+        times_in_years: jax.Array,
         frequency_array: jax.Array,
         **noise_parameters,
     ) -> jax.Array:
@@ -82,7 +80,7 @@ class Noise(object):
 
         Args:
             det (Detector): The detector (e.g. LISA, LIGO) the noise is computed for.
-            times_in_years (ArrayLike): Time(s), in years, at which to evaluate the
+            times_in_years (jax.Array): Time(s), in years, at which to evaluate the
                 detector arms.
             frequency_array (jax.Array): Frequency values, in Hz, at which to evaluate
                 the noise.
@@ -103,7 +101,7 @@ class Noise(object):
     def get_noise_matrix(
         self,
         det: "Detector",
-        times_in_years: ArrayLike,
+        times_in_years: jax.Array,
         frequency_array: jax.Array,
         combination: str | None = None,
         **noise_parameters,
@@ -117,7 +115,7 @@ class Noise(object):
 
         Args:
             det (Detector): The detector (e.g. LISA, LIGO) the noise is computed for.
-            times_in_years (ArrayLike): Time(s), in years, at which to evaluate the
+            times_in_years (jax.Array): Time(s), in years, at which to evaluate the
                 detector arms.
             frequency_array (jax.Array): Frequency values, in Hz, at which to evaluate
                 the noise.
@@ -144,7 +142,7 @@ class Noise(object):
     def compute_detector(
         self,
         det: "Detector",
-        times_in_years: ArrayLike,
+        times_in_years: jax.Array,
         frequency_array: jax.Array,
         combination: str | None = None,
         **noise_parameters,
@@ -158,7 +156,7 @@ class Noise(object):
 
         Args:
             det (Detector): The detector (e.g. LISA, LIGO) the noise is computed for.
-            times_in_years (ArrayLike): Time(s), in years, at which to evaluate the
+            times_in_years (jax.Array): Time(s), in years, at which to evaluate the
                 detector arms.
             frequency_array (jax.Array): Frequency values, in Hz, at which to evaluate
                 the noise.
