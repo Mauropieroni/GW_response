@@ -23,34 +23,26 @@ jax.config.update("jax_enable_x64", True)
 class Noise(object):
     """
     Generic per-link/projected noise computation for any Detector (e.g. LISA, LIGO),
-    mirroring the way Response wraps the single-link/combination functions.
-    Detector-specific behavior (per-link noise and how it projects into a readout
-    combination) is delegated to the `det` object passed into each method.
-
-    `Noise` holds no reference to any particular detector -- a detector owns its `Noise`
-    (e.g. `lisa.noise`), not the other way around, so `det` is passed explicitly to
-    every method here instead of being stored on `self`.
+    mirroring the way Response wraps the single-link/combination functions. `Noise`
+    holds no reference to any particular detector. The `det` object passed to each
+    method implements the detector-specific behavior (per-link noise and projection).
 
     Identity-based `__hash__`/`__eq__` (overriding chex's default field-based ones,
-    which reject `Noise` as unhashable) let `self` be used as a static `jax.jit`
-    argument below -- see `Response` for the full rationale. `compute_detector` stays
-    unjitted since it mutates `self`'s dict attributes.
+    which reject `Noise` as unhashable) let `self` be used as a static in `jax.jit`.
 
     Attributes:
         ps (chex.dataclass): Physical constants used in the noise computations.
         single_link_noise (jax.Array or None): Cache of the most recently computed
             per-link noise (or already-combined noise, for detectors without a per-link
-            decomposition), as set by :meth:`compute_detector`. Doesn't depend on the
-            readout combination (only its projection does), so unlike
-            :attr:`noise_matrix` it isn't keyed by one.
+            decomposition), as set by :meth:`compute_detector`.
         noise_matrix (dict): Cache of projected noise covariance matrices computed by
             :meth:`compute_detector`, keyed by combination name.
     """
 
     ps: PhysicalConstants = PhysicalConstants()
-    # The per-link noise doesn't depend on the readout combination (only its
-    # projection does), so unlike `noise_matrix` below it isn't keyed by one.
+    # The per-link noise doesn't depend on the readout combination
     single_link_noise: jax.Array | None = None
+    # The projected noise depends on the readout combination, so it is keyed.
     noise_matrix: dict = field(default_factory=dict)
 
     def __hash__(self) -> int:
@@ -118,9 +110,10 @@ class Noise(object):
     ) -> jax.Array:
         """
         Computes the noise covariance matrix projected into a readout combination, at
-        the given time(s) and frequencies -- for LISA, Hartwig, Lilley, Muratore &
-        Pieroni (arXiv:2303.15929) eq. 2.29b/2.30's ``S^UV,N = C^UV S^η,N``
-        (see :meth:`gw_response.detector.Detector.project_noise`).
+        the given time(s) and frequencies as in eq. 2.29b/2.30 of Hartwig, Lilley,
+        Muratore & Pieroni (arXiv:2303.15929):
+
+             ``S^UV,N = C^UV S^η,N``
 
         Args:
             det (Detector): The detector (e.g. LISA, LIGO) the noise is computed for.
