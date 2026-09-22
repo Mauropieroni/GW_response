@@ -124,7 +124,8 @@ def polarization_tensors_PC(u: jax.Array, v: jax.Array) -> tuple[jax.Array, jax.
     Computes the plus/cross gravitational wave polarization tensors: eq. 2.10's of
     Hartwig, Lilley, Muratore & Pieroni (arXiv:2303.15929)
 
-        ``e^+_{ab} = û_a û_b - v̂_a v̂_b``, ``e^x_{ab} = û_a v̂_b + v̂_a û_b``
+        ``e^+_{ab} = \\hat{u}_a \\hat{u}_b - \\hat{v}_a \\hat{v}_b``,
+        ``e^x_{ab} = \\hat{u}_a \\hat{v}_b + \\hat{v}_a \\hat{u}_b``
 
     exactly, with no residual normalization difference.
 
