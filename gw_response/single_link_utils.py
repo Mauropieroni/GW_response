@@ -7,22 +7,16 @@ jax.config.update("jax_enable_x64", True)
 
 
 @jax.jit
-def finite_arm_transfer_function(
+def armlength_suppression_function(
     comb_plus: jax.Array, comb_minus: jax.Array, x_vector: jax.Array
 ) -> jax.Array:
     """
-    Shared tail of :func:`gw_response.single_link_static.xi_k_no_G_static`/
-    :func:`gw_response.single_link_retarded.xi_k_no_G_retarded`: the finite-arm-length
-    sinc/phase factor, given each pipeline's own `comb_plus`/`comb_minus` (its
-    light-travel-time-like term, plus/minus the wavevector dotted with the arm).
-    Structurally the same finite-arm-length sinc/phase factor as Hartwig, Lilley,
-    Muratore & Pieroni (arXiv:2303.15929) eq. 2.14's
-    ``M_ij(f,k̂) = e^{iπfL_ij(1+k̂·l̂_ij)} sinc(πfL_ij(1+k̂·l̂_ij))``, though this
-    module splits the overall eq. 2.12 phase
-    across `finite_arm_transfer_function`/:func:`position_exponential`/the
-    light-travel-time prefactor differently than that equation's own `M_ij` split (the
-    combined kernel matches; cross-checked against `lisagwresponse` to floating-point
-    precision, see ``examples/compare_with_lisagwresponse.ipynb``).
+    Computes the sinc/phase suppression factor (induced by several oscillations in a
+    single arm light-travel time). Structurally it corresponds to the M_{ij}(f,\\hat{k})
+    factor in eq. 2.14's of Hartwig, Lilley, Muratore & Pieroni (arXiv:2303.15929)
+
+        ``M_{ij}(f,\\hat{k}) = e^{i π f L_{ij}(1 + \\hat{k} · \\hat{l}_{ij})}
+                            \times sinc(π f L_{ij}(1 + \\hat{k} · \\hat{l}_{ij}))``
 
     Args:
         comb_plus (jax.Array): `comb_plus`, with shape (configurations, arms, pixels).
@@ -44,13 +38,13 @@ def geometrical_factor(
 ) -> jax.Array:
     """
     Projects the gravitational wave polarization tensor onto each detector arm, giving
-    the geometrical antenna-pattern factor of the single-link response. Shared by the
-    static (:mod:`gw_response.single_link_static`) and retarded
-    (:mod:`gw_response.single_link_retarded`) pipelines -- this contraction doesn't
-    depend on the arm-length symmetry assumption either one makes. Implements
-    Hartwig, Lilley, Muratore & Pieroni (arXiv:2303.15929) eq. 2.14's
-    ``G^A(k̂,l̂_ij) = (l̂_ij^a l̂_ij^b/2) e^A_ab(k̂)`` exactly, for `l̂_ij` = a unit arm
-    direction and `e^A` = `polarization_tensor`.
+    the geometrical antenna-pattern factor of the single-link response. Implements
+    eq. 2.14's of Hartwig, Lilley, Muratore & Pieroni (arXiv:2303.15929)
+
+        ``G^A(\\hat{k},\\hat{l}_{ij}) =
+                \\hat{l}_{ij}^a \\hat{l}_{ij}^b e^A_{ab}(\\hat{k}) / 2``
+
+    for `\\hat{l}_{ij}` = a unit arm direction and `e^A` = `polarization_tensor`.
 
     Args:
         arms_matrix_rescaled (jax.Array): Detector arm vectors rescaled by the arm
@@ -63,44 +57,9 @@ def geometrical_factor(
         jax.Array: The geometrical factor, with shape (configurations, arms, pixels).
     """
     arms_tensor = jnp.einsum(
-        "...ik,...jk->...ijk", arms_matrix_rescaled, arms_matrix_rescaled / 2
+        "...ik,...jk->...ijk", arms_matrix_rescaled, arms_matrix_rescaled
     )
-    return jnp.einsum("...ijk,...ijl->...kl", arms_tensor, polarization_tensor.T)
-
-
-@jax.jit
-def get_single_link_response_long_wavelength(
-    polarization_tensor: jax.Array,
-    arms_matrix_rescaled: jax.Array,
-    x_vector: jax.Array,
-) -> jax.Array:
-    """
-    Long-wavelength-limit single-link strain response: the antenna-pattern geometrical
-    factor alone (see :func:`geometrical_factor`), with no
-    finite-arm-length/light-travel-time correction -- the same simplification used by
-    parameter-estimation codes like `gw_fast`/ `gw_fish`, valid when the signal's
-    wavelength is much longer than the arm length. Broadcast to carry a
-    (frequency-independent) x_vector axis so it stays shape-compatible with
-    :func:`gw_response.single_link_static.get_single_link_response_static`/
-    :func:`gw_response.single_link_retarded.get_single_link_response_retarded`.
-
-    Args:
-        polarization_tensor (jax.Array): Polarization tensor(s), with shape (pixels,
-            vectorial_index (3), vectorial_index (3)).
-        arms_matrix_rescaled (jax.Array): Detector arm vectors rescaled by the arm
-            length, with shape (configurations, vectorial_index (3), arms).
-        x_vector (jax.Array): Vector of ``2 pi f L / c`` values over frequency; only its
-            length is used, to broadcast the (frequency-independent) result to a
-            matching shape.
-
-    Returns:
-        jax.Array: The single-link antenna-pattern response, with shape (configurations,
-            x_vector, arms, pixels).
-    """
-    G = geometrical_factor(arms_matrix_rescaled, polarization_tensor)
-    return jnp.broadcast_to(
-        G[:, None, :, :], (G.shape[0], x_vector.shape[-1], *G.shape[1:])
-    )
+    return jnp.einsum("...ijk,...ijl->...kl", arms_tensor, polarization_tensor.T) / 2.0
 
 
 @jax.jit
@@ -111,13 +70,11 @@ def position_exponential(
 ) -> jax.Array:
     """
     Computes the plane-wave phase factor picked up by each satellite due to its position
-    relative to the detector-frame center. Shared by the static
-    (:mod:`gw_response.single_link_static`) and retarded
-    (:mod:`gw_response.single_link_retarded`) pipelines. The same structural role as
-    Hartwig, Lilley, Muratore & Pieroni (arXiv:2303.15929) eq. 2.12's
-    ``e^{-2πifk̂·x⃗_i}`` factor (the receiving spacecraft's own position phase), though
-    see :func:`finite_arm_transfer_function` regarding this module's different split
-    of that equation's overall phase.
+    relative to the detector-frame center. It matches the exponential factor
+
+        ``e^{- 2 π i f \\hat{k} · \\vec{x}_i}``
+
+    in eq. 2.12 of Hartwig, Lilley, Muratore & Pieroni (arXiv:2303.15929).
 
     Args:
         positions_detector_frame_rescaled (jax.Array): Satellite positions relative to
