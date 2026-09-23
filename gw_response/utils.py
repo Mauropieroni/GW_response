@@ -6,8 +6,11 @@ import jax
 import jax.numpy as jnp
 import jax_healpy as hp
 import numpy as np
-from jax.typing import ArrayLike
+from functools import partial
 from scipy.interpolate import make_interp_spline
+from typing import Callable, cast
+
+from jax.typing import ArrayLike
 
 # Local imports
 from gw_response.constants import PhysicalConstants
@@ -16,73 +19,96 @@ from gw_response.constants import PhysicalConstants
 jax.config.update("jax_enable_x64", True)
 
 
-def bspline_interp_jax(t, data, k=5):
-    """JAX-native quintic B-spline interpolant through (t, data) -- matches
-    lisagwresponse's own strain interpolant (`make_interp_spline(k=5)`)
-    exactly. Fitting the spline coefficients is still done once with SciPy
-    up front (a fixed linear solve, not something that needs to run inside
-    jit/vmap); only *evaluation* at new query points is JAX-native (De
-    Boor's algorithm via jnp ops), since that's what gets called repeatedly
-    under jit/vmap inside `strain_td`. Out-of-range queries return 0
-    (matches lisagwresponse's `ext='zeros'` default for strain).
+@partial(jax.jit, static_argnames=("k",))
+def _bspline_evaluate(
+    x: jax.Array,
+    knots: jax.Array,
+    coeffs: jax.Array,
+    k: int,
+    t0: jax.Array,
+    t1: jax.Array,
+) -> jax.Array:
+    """
+    Evaluates a fitted B-spline at query point(s) via De Boor's algorithm, zeroing
+    out-of-range queries.
+
+    Args:
+        x (jax.Array): Query point(s).
+        knots (jax.Array): The spline's knot vector, with shape (n_knots,).
+        coeffs (jax.Array): The spline's coefficients, with shape (n_coeffs,).
+        k (int): The spline degree. Must be a static Python int, not a traced value --
+            the recursion below unrolls `k` Python-level loop iterations.
+        t0 (jax.Array): Lower bound of the valid (in-range) domain.
+        t1 (jax.Array): Upper bound of the valid (in-range) domain.
+
+    Returns:
+        jax.Array: The spline value(s) at `x`, same shape as `x`, 0 outside [t0, t1].
+    """
+    n_coeffs = coeffs.shape[0]
+    # Knot-span index i such that knots[i] <= x < knots[i+1], clamped to the valid
+    # interior range (matches SciPy's own boundary handling).
+    i = jnp.clip(jnp.searchsorted(knots, x, side="right") - 1, k, n_coeffs - 1)
+
+    d = [coeffs[i - k + j] for j in range(k + 1)]
+    for r in range(1, k + 1):
+        for j in range(k, r - 1, -1):
+            left = knots[j + i - k]
+            right = knots[j + 1 + i - r]
+            alpha = (x - left) / (right - left)
+            d[j] = (1.0 - alpha) * d[j - 1] + alpha * d[j]
+    y = d[k]
+    return jnp.where((x >= t0) & (x <= t1), y, 0.0)
+
+
+def bspline_interp_jax(
+    t: ArrayLike, data: ArrayLike, k: int = 5
+) -> Callable[[jax.Array], jax.Array]:
+    """
+    Creates a JAX-native quintic B-spline interpolant through (t, data). Fitting the
+    spline coefficients is still done once with SciPy up front (a fixed linear solve);
+    only *evaluation* at new query points (:func:`_bspline_evaluate`, jaxed De Boor's
+    algorithm) is JAX-native and jitted, since that is the costly repeated operation.
+
+    Args:
+        t (ArrayLike): Sample (times/coordinates), with shape (n_samples,).
+        data (ArrayLike): Sample values at `t`, with shape (n_samples,).
+        k (int, optional): Spline degree. Default 5 (quintic), matching
+            lisagwresponse's own convention.
+
+    Returns:
+        Callable[[jax.Array], jax.Array]: `interp(x)`, mapping query point(s) `x` (any
+            shape) to spline values of the same shape, 0 outside the fitted domain.
+
+    Raises:
+        ValueError: If `t` and `data` don't have the same number of samples.
     """
     if np.size(t) != np.size(data):
         raise ValueError("time and data sizes must be the same")
 
     scipy_spline = make_interp_spline(t, data, k=k)
-    knots = jnp.asarray(scipy_spline.t)
-    coeffs = jnp.asarray(scipy_spline.c)
-    n_coeffs = coeffs.shape[0]
-    # `make_interp_spline` clamps the knot vector with multiplicity k + 1 at
-    # each end, so the valid (in-range) domain is exactly [knots[k],
-    # knots[-k - 1]]; reading it off `knots` keeps everything JAX-native
-    # instead of round-tripping through the original `t` array.
+    knots = jnp.array(scipy_spline.t)
+    coeffs = jnp.array(scipy_spline.c)
+    # `make_interp_spline` clamps the knot vector with multiplicity k + 1 at each end,
+    # so the valid (in-range) domain is exactly [knots[k], knots[-k - 1]]; reading it
+    # off `knots` keeps everything JAX-native.
     t0, t1 = knots[k], knots[-k - 1]
 
-    def _deboor_scalar(x):
-        # Knot-span index i such that knots[i] <= x < knots[i+1], clamped to
-        # the valid interior range (matches SciPy's own boundary handling).
-        i = jnp.clip(jnp.searchsorted(knots, x, side="right") - 1, k, n_coeffs - 1)
-
-        d = [coeffs[i - k + j] for j in range(k + 1)]
-        for r in range(1, k + 1):
-            for j in range(k, r - 1, -1):
-                left = knots[j + i - k]
-                right = knots[j + 1 + i - r]
-                alpha = (x - left) / (right - left)
-                d[j] = (1.0 - alpha) * d[j - 1] + alpha * d[j]
-        return d[k]
-
-    _deboor = jax.vmap(_deboor_scalar)
-
-    def interp(x):
-        x = jnp.asarray(x)
-        shape = x.shape
-        x_flat = x.reshape(-1)
-        y_flat = _deboor(x_flat)
-        y_flat = jnp.where((x_flat >= t0) & (x_flat <= t1), y_flat, 0.0)
-        return y_flat.reshape(shape)
-
-    return interp
+    return partial(_bspline_evaluate, knots=knots, coeffs=coeffs, k=k, t0=t0, t1=t1)
 
 
-def as_time_array(time_in_years: ArrayLike) -> jax.Array:
+def as_time_array(time_in_years: jax.Array) -> jax.Array:
     """
     Wraps a bare scalar `time_in_years` (a Python int/float, or a 0-d array) into a
     length-1 jnp array so that downstream functions can always assume an array-like of
     times.
 
     Args:
-        time_in_years (ArrayLike): A scalar or array of time(s), in years.
+        time_in_years (jax.Array): A scalar or array of time(s), in years.
 
     Returns:
         jax.Array: `time_in_years` as an array with at least 1 dimension.
     """
-    return (
-        jnp.array([time_in_years])
-        if jnp.ndim(time_in_years) == 0
-        else jnp.asarray(time_in_years)
-    )
+    return jnp.array([time_in_years]) if jnp.ndim(time_in_years) == 0 else time_in_years
 
 
 @chex.dataclass
@@ -136,9 +162,7 @@ class Pixel:
         """
         NPIX = hp.nside2npix(self.NSIDE)
         theta_pixel, phi_pixel = hp.pix2ang(self.NSIDE, jnp.arange(NPIX))
-        theta_pixel = jnp.asarray(theta_pixel)
-        phi_pixel = jnp.asarray(phi_pixel)
-        angular_map = jnp.asarray(jnp.stack([theta_pixel, phi_pixel], axis=-1))
+        angular_map = jnp.stack([theta_pixel, phi_pixel], axis=-1)
         return NPIX, angular_map, theta_pixel, phi_pixel
 
     def change_NSIDE(self, NSIDE: int) -> None:
@@ -161,12 +185,12 @@ class Pixel:
 
 
 @jax.jit
-def arm_lengths_from_matrix(arms_matrix_rescaled: ArrayLike) -> jax.Array:
+def arm_lengths_from_matrix(arms_matrix_rescaled: jax.Array) -> jax.Array:
     """
     Per-arm lengths from the arm matrix.
 
     Args:
-        arms_matrix_rescaled (ArrayLike): Detector arm vectors, with shape
+        arms_matrix_rescaled (jax.Array): Detector arm vectors, with shape
             (configurations, vectorial_index (3), arms).
 
     Returns:
@@ -178,7 +202,7 @@ def arm_lengths_from_matrix(arms_matrix_rescaled: ArrayLike) -> jax.Array:
 
 
 @jax.jit
-def delay_factor(length: ArrayLike, x_vector: ArrayLike) -> jax.Array:
+def delay_factor(length: jax.Array, x_vector: jax.Array) -> jax.Array:
     """
     Frequency-domain delay operator ``exp(-i * x * length)`` for each (length, x_vector)
     pair -- shared by :func:`arm_length_exponential` (`length` the per-arm length) and
@@ -186,18 +210,18 @@ def delay_factor(length: ArrayLike, x_vector: ArrayLike) -> jax.Array:
     light-travel-time, in the same dimensionless units).
 
     Args:
-        length (ArrayLike): Length(s), with shape (..., arms).
-        x_vector (ArrayLike): Vector of ``2 pi f L / c`` values over frequency.
+        length (jax.Array): Length(s), with shape (..., arms).
+        x_vector (jax.Array): Vector of ``2 pi f L / c`` values over frequency.
 
     Returns:
         jax.Array: The delay factor, with shape (..., x_vector, arms).
     """
-    return jnp.exp(jnp.einsum("i,...j->...ij", -1j * jnp.asarray(x_vector), length))
+    return jnp.exp(jnp.einsum("i,...j->...ij", -1j * jnp.array(x_vector), length))
 
 
 @jax.jit
 def arm_length_exponential(
-    arms_matrix_rescaled: ArrayLike, x_vector: ArrayLike
+    arms_matrix_rescaled: jax.Array, x_vector: jax.Array
 ) -> jax.Array:
     """
     Compute the exponential factor for the Time Delay Interferometry (TDI).
@@ -208,10 +232,10 @@ def arm_length_exponential(
     light.
 
     Args:
-        arms_matrix_rescaled (ArrayLike): Rescaled arm matrices of the interferometer,
+        arms_matrix_rescaled (jax.Array): Rescaled arm matrices of the interferometer,
             with shape (configurations, vectorial_index (3), arms (6)). Ordering: [12,
             23, 31, 21, 32, 13].
-        x_vector (ArrayLike): Vector of the x values over frequency, specific to the
+        x_vector (jax.Array): Vector of the x values over frequency, specific to the
             LISA interferometer's configuration and operational characteristics.
 
     Returns:
@@ -224,15 +248,15 @@ def arm_length_exponential(
 
 @jax.jit
 def combine_single_link(
-    combination_matrix: ArrayLike, single_link: ArrayLike
+    combination_matrix: jax.Array, single_link: jax.Array
 ) -> jax.Array:
     """
     Applies a detector's channel-combination matrix to per-link responses.
 
     Args:
-        combination_matrix (ArrayLike): Mixing matrix turning per-link responses into
+        combination_matrix (jax.Array): Mixing matrix turning per-link responses into
             readout channels, with shape (..., x_vector, channels, arms).
-        single_link (ArrayLike): Per-link response, with shape (..., x_vector, arms,
+        single_link (jax.Array): Per-link response, with shape (..., x_vector, arms,
             pixels).
 
     Returns:
@@ -244,7 +268,7 @@ def combine_single_link(
 
 @jax.jit
 def project_noise_matrix(
-    combination_matrix: ArrayLike, single_link_noise: ArrayLike
+    combination_matrix: jax.Array, single_link_noise: jax.Array
 ) -> jax.Array:
     """
     Congruence-transforms a per-link noise covariance into a detector's
@@ -252,9 +276,9 @@ def project_noise_matrix(
     combination_matrix^H``.
 
     Args:
-        combination_matrix (ArrayLike): Mixing matrix turning per-link responses into
+        combination_matrix (jax.Array): Mixing matrix turning per-link responses into
             readout channels, with shape (..., x_vector, channels, arms).
-        single_link_noise (ArrayLike): Per-link noise covariance, with shape (...,
+        single_link_noise (jax.Array): Per-link noise covariance, with shape (...,
             x_vector, arms, arms).
 
     Returns:
@@ -352,7 +376,7 @@ def _load_numerical_orbits_text(orbit_file: str) -> tuple[jax.Array, jax.Array]:
             years and positions_grid has shape (samples, 3, 3), indexed as [time,
             satellite, coordinate].
     """
-    data = np.atleast_2d(np.loadtxt(orbit_file))
+    data = np.loadtxt(orbit_file)
     if data.shape[1] != 10:
         raise ValueError(
             "Numerical orbit files must have 10 columns: time_in_years, x1, "
@@ -390,12 +414,16 @@ def _load_numerical_orbits_lisaorbits(orbit_file: str) -> tuple[jax.Array, jax.A
                 f"Unsupported lisaorbits file version {version!r}; "
                 "gw_response requires lisaorbits format version >= 2.0."
             )
-        t0 = float(np.asarray(hdf5.attrs["t0"]).item())
-        dt = float(np.asarray(hdf5.attrs["dt"]).item())
-        size = int(np.asarray(hdf5.attrs["size"]).item())
-        dataset = hdf5["tcb/x"]
-        assert isinstance(dataset, h5py.Dataset)
+
+        # cast doesn't do anything at runtime, but it makes pyright happy
+        t0 = float(cast(np.generic, hdf5.attrs["t0"]).item())
+        dt = float(cast(np.generic, hdf5.attrs["dt"]).item())
+        size = int(cast(np.generic, hdf5.attrs["size"]).item())
+        dataset = cast(h5py.Dataset, hdf5["tcb/x"])
+
+        # Convert the dataset to a jax array for further processing
         positions_grid = jnp.array(dataset[:])
+
     time_grid = (t0 + np.arange(size) * dt) / PhysicalConstants().yr
     return jnp.array(time_grid), positions_grid
 
