@@ -96,19 +96,19 @@ def bspline_interp_jax(
     return partial(_bspline_evaluate, knots=knots, coeffs=coeffs, k=k, t0=t0, t1=t1)
 
 
-def as_time_array(time_in_years: jax.Array) -> jax.Array:
+def as_time_array(time_in_years: ArrayLike) -> jax.Array:
     """
     Wraps a bare scalar `time_in_years` (a Python int/float, or a 0-d array) into a
     length-1 jnp array so that downstream functions can always assume an array-like of
     times.
 
     Args:
-        time_in_years (jax.Array): A scalar or array of time(s), in years.
+        time_in_years (ArrayLike): A scalar or array of time(s), in years.
 
     Returns:
         jax.Array: `time_in_years` as an array with at least 1 dimension.
     """
-    return jnp.array([time_in_years]) if jnp.ndim(time_in_years) == 0 else time_in_years
+    return jnp.atleast_1d(time_in_years)
 
 
 @chex.dataclass
